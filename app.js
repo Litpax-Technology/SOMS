@@ -303,30 +303,32 @@ function toggleDetail(row,po){
 
 /* ----- New Order modal ----- */
 let itemRows=0;
+let selectedVendorId='';
+
 function openNewOrder(){
-  const vendors=State.vendors.filter(v=>v.Status!=='Inactive');
+  selectedVendorId='';
   openModal('New Purchase Order', `
+    <h4 class="mini-head">1 · Items</h4>
+    <div id="itemRows"></div>
+    <button class="btn btn-light btn-sm" onclick="addItemRow()">+ Add Item</button>
+    <div class="order-total">Total: <span id="noTotal" class="mono">₹0</span></div>
+
+    <h4 class="mini-head" style="margin-top:20px">2 · Select Vendor</h4>
+    <div id="vendorPicker" class="vendor-picker"></div>
+
+    <h4 class="mini-head" style="margin-top:20px">3 · Details</h4>
     <div class="form-grid">
-      <div class="field"><label>Vendor <span class="req">*</span></label>
-        <select id="noVendor" onchange="noVendorChanged()">
-          <option value="">Select vendor</option>
-          ${vendors.map(v=>`<option value="${esc(v.VendorID)}">${esc(v.Name)}</option>`).join('')}
-        </select></div>
       <div class="field"><label>Order Date</label><input type="date" id="noDate" value="${todayStr()}"></div>
       <div class="field"><label>Expected Receiving Date</label><input type="date" id="noExp"></div>
       <div class="field"><label>Priority</label>
         <select id="noPriority"><option>Normal</option><option>High</option><option>Urgent</option></select></div>
-      <div class="field full"><label>Remarks</label><input id="noRemarks" placeholder="Optional note"></div>
+      <div class="field"><label>Remarks</label><input id="noRemarks" placeholder="Optional note"></div>
     </div>
-    <h4 style="margin:18px 0 10px;font-size:13px;color:var(--muted);text-transform:uppercase;letter-spacing:.4px">Items</h4>
-    <div id="itemRows"></div>
-    <button class="btn btn-light btn-sm" onclick="addItemRow()">+ Add Item</button>
-    <div class="order-total">Total: <span id="noTotal" class="mono">₹0</span></div>
     <div class="modal-actions">
       <button class="btn btn-light" onclick="closeModal()">Cancel</button>
       <button class="btn btn-primary" id="noSave" onclick="saveOrder()">Create Order</button>
     </div>`);
-  itemRows=0; $('#itemRows').innerHTML=''; addItemRow();
+  itemRows=0; $('#itemRows').innerHTML=''; addItemRow(); updateVendorPicker();
 }
 function materialOptions(){ return (State.config.lists.MaterialList||[]).map(m=>`<option>${esc(m)}</option>`).join(''); }
 function unitOptions(){ return (State.config.lists.Units||[]).map(u=>`<option>${esc(u)}</option>`).join(''); }
@@ -335,33 +337,14 @@ function addItemRow(){
   const row=document.createElement('div'); row.className='item-row'; row.dataset.id=id;
   row.innerHTML=`
     <div class="field"><label>Material</label>
-      <select data-f="material" onchange="itemMaterialChanged(${id})"><option value="">Select</option>${materialOptions()}</select>
-      <span class="hint" data-tag="${id}"></span></div>
+      <select data-f="material" onchange="itemsChanged()"><option value="">Select</option>${materialOptions()}</select></div>
     <div class="field"><label>Qty</label><input type="number" min="0" step="any" data-f="qty" oninput="recalcTotal()"></div>
     <div class="field"><label>Unit</label><select data-f="unit">${unitOptions()}</select></div>
     <div class="field"><label>Rate</label><input type="number" min="0" step="any" data-f="rate" oninput="recalcTotal()"></div>
-    <button class="rm" onclick="this.closest('.item-row').remove();recalcTotal()" title="Remove">✕</button>`;
+    <button class="rm" onclick="this.closest('.item-row').remove();itemsChanged()" title="Remove">✕</button>`;
   $('#itemRows').appendChild(row);
 }
-function noVendorChanged(){ $$('#itemRows .item-row').forEach(r=>itemMaterialChanged(r.dataset.id)); }
-function itemMaterialChanged(id){
-  const row=$(`.item-row[data-id="${id}"]`); if(!row) return;
-  const mat=row.querySelector('[data-f="material"]').value;
-  const vend=$('#noVendor').value;
-  const hint=row.querySelector(`[data-tag="${id}"]`);
-  hint.className='hint'; hint.textContent='';
-  if(mat && vend){
-    const tag=vendorTagFor(vend,mat);
-    if(tag){
-      if(String(tag).toLowerCase()==='blacklisted'){ hint.className='hint warn'; hint.textContent='⚠ Blacklisted for this material'; }
-      else hint.textContent='Vendor tag: '+tag;
-    } else {
-      const others=vendorsForMaterial(mat).filter(v=>String(v.Tag).toLowerCase()==='preferred');
-      if(others.length) hint.textContent='Preferred: '+others.map(v=>v.Name).join(', ');
-    }
-  }
-  recalcTotal();
-}
+function itemsChanged(){ recalcTotal(); updateVendorPicker(); }
 function collectItems(){
   return $$('#itemRows .item-row').map(r=>({
     Material:r.querySelector('[data-f="material"]').value,
@@ -374,21 +357,75 @@ function recalcTotal(){
   const t=collectItems().reduce((a,i)=>a+((Number(i.OrderedQty)||0)*(Number(i.Rate)||0)),0);
   const el=$('#noTotal'); if(el) el.textContent=money(t);
 }
+function addedMaterials(){ return [...new Set(collectItems().map(i=>i.Material).filter(Boolean))]; }
+
+/* Vendor picker driven by the items added above */
+function updateVendorPicker(){
+  const wrap=$('#vendorPicker'); if(!wrap) return;
+  const mats=addedMaterials();
+  if(!mats.length){
+    wrap.innerHTML='<div class="vp-empty">Add items above to see the vendors who supply them.</div>';
+    selectedVendorId=''; return;
+  }
+  const active=State.vendors.filter(v=>v.Status!=='Inactive');
+  const cands=active.map(v=>{
+    const perMat=mats.map(m=>({material:m, tag:vendorTagFor(v.VendorID,m)}));
+    const supplies=perMat.filter(x=>x.tag).length;
+    return {
+      v, perMat, supplies,
+      blacklisted:perMat.some(x=>String(x.tag).toLowerCase()==='blacklisted'),
+      preferred:perMat.some(x=>String(x.tag).toLowerCase()==='preferred')
+    };
+  }).filter(c=>c.supplies>0)
+    .sort((a,b)=> (b.preferred-a.preferred) || (b.supplies-a.supplies) || (a.blacklisted-b.blacklisted));
+
+  const manualDropdown=`<div class="vp-more">
+      <select id="vpManual" onchange="selectVendor(this.value)">
+        <option value="">Other vendor…</option>
+        ${active.map(v=>`<option value="${esc(v.VendorID)}" ${v.VendorID==selectedVendorId?'selected':''}>${esc(v.Name)}</option>`).join('')}
+      </select></div>`;
+
+  if(!cands.length){
+    wrap.innerHTML=`<div class="vp-empty">No vendor is mapped to these materials yet. Pick one manually (or map materials in the Vendors tab).</div>${manualDropdown}`;
+    return;
+  }
+  wrap.innerHTML = cands.map(c=>{
+    const tagsHtml=c.perMat.map(x=> x.tag
+      ? `<span class="badge ${tagClass(x.tag)}">${esc(x.material)}: ${esc(x.tag)}</span>`
+      : `<span class="badge b-gray" style="opacity:.55">${esc(x.material)}: —</span>`).join('');
+    return `<div class="vp-card ${selectedVendorId==c.v.VendorID?'sel':''} ${c.blacklisted?'dis':''}"
+        ${c.blacklisted?'':`onclick="selectVendor('${esc(c.v.VendorID)}')"`}>
+      <div class="vp-top">
+        <span class="vp-name">${esc(c.v.Name)}</span>
+        ${c.preferred?'<span class="badge b-green">Preferred</span>':''}
+        ${c.blacklisted?'<span class="badge b-red">Blacklisted</span>':''}
+        <span class="vp-cover">${c.supplies}/${mats.length} items</span>
+      </div>
+      <div class="vp-tags">${tagsHtml}</div>
+    </div>`;
+  }).join('') + manualDropdown;
+}
+function selectVendor(id){
+  if(!id) return;
+  const bad=addedMaterials().filter(m=>String(vendorTagFor(id,m)).toLowerCase()==='blacklisted');
+  if(bad.length){ toast('Vendor is blacklisted for: '+bad.join(', '),'error'); return; }
+  selectedVendorId=id;
+  updateVendorPicker();
+}
 async function saveOrder(){
-  const vendor=$('#noVendor').value;
-  const date=$('#noDate').value, exp=$('#noExp').value;
-  if(!vendor) return toast('Select a vendor','error');
   const items=collectItems().filter(i=>i.Material);
   if(!items.length) return toast('Add at least one item','error');
+  if(!selectedVendorId) return toast('Select a vendor','error');
   for(const it of items){
     if(!(Number(it.OrderedQty)>0)) return toast('Quantity must be greater than 0 ('+it.Material+')','error');
-    if(String(vendorTagFor(vendor,it.Material)).toLowerCase()==='blacklisted')
+    if(String(vendorTagFor(selectedVendorId,it.Material)).toLowerCase()==='blacklisted')
       return toast('Vendor is blacklisted for '+it.Material,'error');
   }
+  const date=$('#noDate').value, exp=$('#noExp').value;
   if(exp && exp<date) return toast('Expected date cannot be before order date','error');
   const btn=$('#noSave'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
   try{
-    const res=await api({action:'addOrder',VendorID:vendor,Date:date,ExpectedDate:exp,
+    const res=await api({action:'addOrder',VendorID:selectedVendorId,Date:date,ExpectedDate:exp,
       Priority:$('#noPriority').value,CreatedBy:State.user.Name,Remarks:$('#noRemarks').value,
       items:JSON.stringify(items)});
     toast('Order '+res.PO_No+' created','success');
