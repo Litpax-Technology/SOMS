@@ -321,7 +321,14 @@ tbody tr:last-child td{border-bottom:none}
 .map-list{margin-bottom:16px;display:flex;flex-direction:column;gap:8px}
 
 /* masters */
-.masters-note{color:var(--muted);font-size:13px;margin-bottom:18px}
+.masters-note{color:var(--muted);font-size:13px;margin:6px 0 18px}
+.item-cat-group{margin-bottom:18px}
+.item-cat-label{font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px}
+.cat-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.cat-card{padding:13px 12px;border:1.5px solid var(--border);border-radius:12px;background:#fff;font-weight:600;font-size:13.5px;color:var(--text);transition:border-color .15s,box-shadow .15s,transform .12s;text-align:center;cursor:pointer}
+.cat-card:hover{border-color:var(--accent);transform:translateY(-1px)}
+.cat-card.sel{border-color:var(--accent);background:var(--accent-soft);box-shadow:0 0 0 3px var(--accent-soft)}
+@media (max-width:560px){.cat-grid{grid-template-columns:1fr 1fr}}
 .master-chips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px}
 .master-chip{display:inline-flex;align-items:center;gap:6px;background:#f5f6f8;border:1px solid var(--border);border-radius:999px;padding:6px 8px 6px 14px;font-size:13px;font-weight:500;animation:floatIn .25s ease}
 .master-chip button{width:22px;height:22px;border-radius:50%;font-size:11px;color:var(--muted);transition:background .15s,color .15s}
