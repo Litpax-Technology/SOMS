@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#1e1b4b" />
+  <title>Litpax SMS — Store Management System</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- ================= LOGIN ================= -->
+  <div id="loginScreen" class="login-screen">
+    <div class="login-card">
+      <div class="login-logo">SMS</div>
+      <h1 class="login-title">Litpax SMS</h1>
+      <p class="login-sub">Store Management System</p>
+      <div class="pin-field">
+        <input id="pinInput" type="password" inputmode="numeric" maxlength="6" placeholder="Enter PIN" autocomplete="off" />
+      </div>
+      <button id="loginBtn" class="btn btn-primary btn-block">Sign In</button>
+      <p id="loginError" class="login-error"></p>
+    </div>
+    <div class="login-footer">Litpax Technology &middot; Internal Tool</div>
+  </div>
+
+  <!-- ================= APP ================= -->
+  <div id="app" class="app hidden">
+
+    <!-- Sidebar -->
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-logo">SMS</div>
+        <div class="brand-text">
+          <span class="brand-name">Litpax SMS</span>
+          <span class="brand-sub">Store System</span>
+        </div>
+      </div>
+      <nav class="nav">
+        <a class="nav-item active" data-view="dashboard"><span class="nav-ic">▤</span> Dashboard</a>
+        <a class="nav-item" data-view="orders"><span class="nav-ic">▧</span> Orders</a>
+        <a class="nav-item" data-view="receiving"><span class="nav-ic">▽</span> Receiving</a>
+        <a class="nav-item" data-view="followups"><span class="nav-ic">◔</span> Follow-ups</a>
+        <a class="nav-item" data-view="vendors"><span class="nav-ic">◈</span> Vendors</a>
+      </nav>
+      <div class="sidebar-foot">
+        <div class="user-chip">
+          <div class="user-avatar" id="userAvatar">A</div>
+          <div class="user-meta">
+            <span id="userName">Admin</span>
+            <span id="userRole" class="user-role">Admin</span>
+          </div>
+        </div>
+        <button id="logoutBtn" class="btn-ghost btn-logout">Logout</button>
+      </div>
+    </aside>
+
+    <div class="sidebar-overlay" id="sidebarOverlay"></div>
+
+    <!-- Main -->
+    <main class="main">
+      <header class="topbar">
+        <button class="hamburger" id="hamburger" aria-label="Menu">☰</button>
+        <h2 id="viewTitle" class="view-title">Dashboard</h2>
+        <button id="refreshBtn" class="btn-ghost btn-refresh" title="Refresh">⟳</button>
+      </header>
+
+      <section id="viewRoot" class="view-root"><!-- views render here --></section>
+    </main>
+  </div>
+
+  <!-- ================= MODAL ================= -->
+  <div id="modalBackdrop" class="modal-backdrop hidden">
+    <div class="modal" id="modal">
+      <div class="modal-head">
+        <h3 id="modalTitle">Title</h3>
+        <button class="modal-close" id="modalClose">✕</button>
+      </div>
+      <div class="modal-body" id="modalBody"></div>
+    </div>
+  </div>
+
+  <!-- ================= TOASTS ================= -->
+  <div id="toastWrap" class="toast-wrap"></div>
+
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
