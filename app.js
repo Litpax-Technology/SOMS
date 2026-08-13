@@ -34,6 +34,7 @@ const esc = s => String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&
 const todayStr = ()=>{ const d=new Date(); return d.toISOString().slice(0,10); };
 const money = n => '₹' + (Number(n)||0).toLocaleString('en-IN');
 function vendorName(id){ const v=State.vendors.find(x=>x.VendorID==id); return v?v.Name:id; }
+function cfgList(name, fb){ const a=State.config.lists[name]; return (a && a.length)?a:(fb||[]); }
 
 function toast(msg, type='info'){
   const ic = type==='success'?'✓':type==='error'?'!':'i';
@@ -447,7 +448,7 @@ async function saveReceiving(po){
 
 /* ----- Follow-up ----- */
 function openFollowUp(po){
-  const types=State.config.lists.FollowUpTypes||['Call'];
+  const types=cfgList('FollowUpTypes',['Call','Visit','Email','WhatsApp']);
   openModal('Follow-up — '+po, `
     <div class="form-grid">
       <div class="field"><label>Type</label><select id="fuType">${types.map(t=>`<option>${esc(t)}</option>`).join('')}</select></div>
@@ -551,52 +552,70 @@ function renderVendorTable(){
       <td style="max-width:280px">${tags}</td><td>${esc(v.Phone||'')}</td><td>${esc(v.PaymentTerms||'')}</td>
       <td>${v.Status==='Inactive'?'<span class="badge b-gray">Inactive</span>':'<span class="badge b-green">Active</span>'}</td>
       <td onclick="event.stopPropagation()">
+        <button class="link-btn" onclick="openVendorForm('${esc(v.VendorID)}')">Edit</button>
         <button class="link-btn" onclick="openMaterialMap('${esc(v.VendorID)}')">Materials</button></td></tr>`;
   }).join('');
 }
-function openVendorForm(){
+function openVendorForm(vendorId){
+  const v = vendorId ? State.vendors.find(x=>x.VendorID==vendorId) : null;
   const cats=State.config.lists.VendorCategories||[]; const terms=State.config.lists.PaymentTerms||[];
-  openModal('Add Vendor', `
+  const opt=(arr,sel)=>arr.map(c=>`<option ${c===sel?'selected':''}>${esc(c)}</option>`).join('');
+  openModal(v?'Edit Vendor':'Add Vendor', `
     <div class="form-grid">
-      <div class="field"><label>Name <span class="req">*</span></label><input id="veName"></div>
-      <div class="field"><label>Category</label><select id="veCat"><option value="">—</option>${cats.map(c=>`<option>${esc(c)}</option>`).join('')}</select></div>
-      <div class="field"><label>Contact Person</label><input id="veContact"></div>
-      <div class="field"><label>Phone</label><input id="vePhone" maxlength="10" inputmode="numeric" placeholder="10 digits"></div>
-      <div class="field"><label>GST</label><input id="veGst"></div>
-      <div class="field"><label>Payment Terms</label><select id="veTerms"><option value="">—</option>${terms.map(t=>`<option>${esc(t)}</option>`).join('')}</select></div>
-      <div class="field full"><label>Address</label><input id="veAddr"></div>
+      <div class="field"><label>Name <span class="req">*</span></label><input id="veName" value="${esc(v?v.Name:'')}"></div>
+      <div class="field"><label>Category</label><select id="veCat"><option value="">—</option>${opt(cats,v?v.Category:'')}</select></div>
+      <div class="field"><label>Contact Person</label><input id="veContact" value="${esc(v?v.Contact:'')}"></div>
+      <div class="field"><label>Phone</label><input id="vePhone" maxlength="10" inputmode="numeric" placeholder="10 digits" value="${esc(v?v.Phone:'')}"></div>
+      <div class="field"><label>GST</label><input id="veGst" value="${esc(v?v.GST:'')}"></div>
+      <div class="field"><label>Payment Terms</label><select id="veTerms"><option value="">—</option>${opt(terms,v?v.PaymentTerms:'')}</select></div>
+      <div class="field full"><label>Address</label><input id="veAddr" value="${esc(v?v.Address:'')}"></div>
+      ${v?`<div class="field"><label>Status</label><select id="veStatus">
+        <option ${v.Status!=='Inactive'?'selected':''}>Active</option>
+        <option ${v.Status==='Inactive'?'selected':''}>Inactive</option></select></div>`:''}
     </div>
     <div class="modal-actions">
       <button class="btn btn-light" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" id="veSave" onclick="saveVendor()">Add Vendor</button>
+      <button class="btn btn-primary" id="veSave" onclick="saveVendor(${v?`'${esc(v.VendorID)}'`:''})">${v?'Save Changes':'Add Vendor'}</button>
     </div>`);
 }
-async function saveVendor(){
+async function saveVendor(vendorId){
   const name=$('#veName').value.trim(); if(!name) return toast('Vendor name required','error');
   const phone=$('#vePhone').value.trim();
   if(phone && !/^\d{10}$/.test(phone)) return toast('Phone must be 10 digits','error');
   const btn=$('#veSave'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
+  const fields={Name:name,Category:$('#veCat').value,Contact:$('#veContact').value,
+    Phone:phone,GST:$('#veGst').value,Address:$('#veAddr').value,PaymentTerms:$('#veTerms').value};
   try{
-    await api({action:'addVendor',Name:name,Category:$('#veCat').value,Contact:$('#veContact').value,
-      Phone:phone,GST:$('#veGst').value,Address:$('#veAddr').value,PaymentTerms:$('#veTerms').value,Status:'Active'});
-    toast('Vendor added','success'); closeModal(); await loadAll(); render();
-  }catch(e){ toast(e.message,'error'); btn.disabled=false; btn.textContent='Add Vendor'; }
+    if(vendorId){
+      fields.VendorID=vendorId; fields.action='updateVendor'; fields.Status=$('#veStatus').value;
+      await api(fields); toast('Vendor updated','success');
+    }else{
+      fields.action='addVendor'; fields.Status='Active';
+      await api(fields); toast('Vendor added','success');
+    }
+    closeModal(); await loadAll(); render();
+  }catch(e){ toast(e.message,'error'); btn.disabled=false; btn.textContent=vendorId?'Save Changes':'Add Vendor'; }
 }
 
 /* ----- Material↔Vendor mapping with tags ----- */
 function openMaterialMap(vendorId){
   const v=State.vendors.find(x=>x.VendorID==vendorId);
   const maps=State.vendorMaterials.filter(m=>m.VendorID==vendorId);
-  const mats=State.config.lists.MaterialList||[]; const tags=State.config.lists.VendorTags||['Preferred','Approved','Trial','Blacklisted'];
+  const mats=State.config.lists.MaterialList||[]; const tags=cfgList('VendorTags',['Preferred','Approved','Trial','Blacklisted']);
   openModal('Materials — '+(v?v.Name:vendorId), `
-    ${maps.length?`<table class="mini-table" style="margin-bottom:14px"><tbody>
-      ${maps.map(m=>`<tr><td>${esc(m.Material)}</td>
-        <td><span class="badge ${tagClass(m.Tag)}">${esc(m.Tag)}</span></td>
-        <td>${m.LastRate?money(m.LastRate):''}</td>
-        <td><select onchange="updateMap('${esc(vendorId)}','${esc(m.Material)}',this.value)">
-          ${tags.map(t=>`<option ${t===m.Tag?'selected':''}>${esc(t)}</option>`).join('')}
-        </select></td></tr>`).join('')}
-    </tbody></table>`:'<div class="empty" style="padding:16px"><span class="emoji">◇</span>No materials mapped yet</div>'}
+    ${maps.length?`<div class="map-list">
+      <div class="map-row map-head"><span>Material</span><span>Tag</span><span>Last Rate</span><span>Remarks</span><span></span></div>
+      ${maps.map(m=>`<div class="map-row" data-mat="${esc(m.Material)}">
+        <span class="map-name">${esc(m.Material)}</span>
+        <select data-mf="tag">${tags.map(t=>`<option ${t===m.Tag?'selected':''}>${esc(t)}</option>`).join('')}</select>
+        <input data-mf="rate" type="number" min="0" step="any" value="${esc(m.LastRate||'')}" placeholder="Rate">
+        <input data-mf="remarks" value="${esc(m.Remarks||'')}" placeholder="Note">
+        <span class="map-btns">
+          <button class="btn btn-light btn-sm" onclick="saveMapEdit('${esc(vendorId)}','${esc(m.Material)}',this)">Save</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteMap('${esc(vendorId)}','${esc(m.Material)}')">Delete</button>
+        </span>
+      </div>`).join('')}
+    </div>`:'<div class="empty" style="padding:16px"><span class="emoji">◇</span>No materials mapped yet</div>'}
     <h4 style="margin:6px 0 10px;font-size:12px;color:var(--muted);text-transform:uppercase">Add Material</h4>
     <div class="form-grid">
       <div class="field"><label>Material</label><select id="mmMat"><option value="">Select</option>${mats.map(m=>`<option>${esc(m)}</option>`).join('')}</select></div>
@@ -618,10 +637,23 @@ async function saveMap(vendorId){
     toast('Material mapped','success'); await loadAll(); openMaterialMap(vendorId); renderVendorTable();
   }catch(e){ toast(e.message,'error'); btn.disabled=false; btn.textContent='Add Material'; }
 }
-async function updateMap(vendorId,material,tag){
-  try{ await api({action:'updateVendorMaterial',VendorID:vendorId,Material:material,Tag:tag});
-    toast('Tag updated','success'); await loadAll(); renderVendorTable(); }
-  catch(e){ toast(e.message,'error'); }
+async function saveMapEdit(vendorId, material, btn){
+  const row=btn.closest('.map-row');
+  const tag=row.querySelector('[data-mf="tag"]').value;
+  const rate=row.querySelector('[data-mf="rate"]').value;
+  const remarks=row.querySelector('[data-mf="remarks"]').value;
+  btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
+  try{
+    await api({action:'updateVendorMaterial',VendorID:vendorId,Material:material,Tag:tag,LastRate:rate,Remarks:remarks});
+    toast('Material updated','success'); await loadAll(); openMaterialMap(vendorId); renderVendorTable();
+  }catch(e){ toast(e.message,'error'); btn.disabled=false; btn.textContent='Save'; }
+}
+async function deleteMap(vendorId, material){
+  if(!confirm('Remove "'+material+'" from this vendor?')) return;
+  try{
+    await api({action:'deleteVendorMaterial',VendorID:vendorId,Material:material});
+    toast('Material removed','success'); await loadAll(); openMaterialMap(vendorId); renderVendorTable();
+  }catch(e){ toast(e.message,'error'); }
 }
 
 /* =========================================================
