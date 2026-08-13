@@ -5,7 +5,7 @@
 const State = {
   user: null,
   config: { lists:{}, settings:{} },
-  vendors: [], vendorMaterials: [], orders: [], orderItems: [], receiving: [], followups: [],
+  vendors: [], vendorMaterials: [], items: [], orders: [], orderItems: [], receiving: [], followups: [],
   view: 'dashboard'
 };
 
@@ -35,6 +35,11 @@ const todayStr = ()=>{ const d=new Date(); return d.toISOString().slice(0,10); }
 const money = n => '₹' + (Number(n)||0).toLocaleString('en-IN');
 function vendorName(id){ const v=State.vendors.find(x=>x.VendorID==id); return v?v.Name:id; }
 function cfgList(name, fb){ const a=State.config.lists[name]; return (a && a.length)?a:(fb||[]); }
+function itemNames(){ const it=State.items||[]; return it.length? it.map(i=>i.Item) : (State.config.lists.MaterialList||[]); }
+function catIcon(cat){
+  const m={'Cells':'🔋','BMS':'⚡','Charger':'🔌','Nickel/Busbar':'🟠','Box':'📦','IOT':'📡','Inverter':'🔧','Wire':'🧵','Consumables':'🧰','Tools':'🛠️','Packaging':'📦','Casing':'🧱','Hardware':'🔩'};
+  return m[cat]||'📦';
+}
 
 function toast(msg, type='info'){
   const ic = type==='success'?'✓':type==='error'?'!':'i';
@@ -117,6 +122,7 @@ async function loadAll(){
   State.config = d.config || {lists:{},settings:{}};
   State.vendors = d.vendors||[];
   State.vendorMaterials = d.vendorMaterials||[];
+  State.items = d.items||[];
   State.orders = d.orders||[];
   State.orderItems = d.orderItems||[];
   State.receiving = d.receiving||[];
@@ -330,16 +336,34 @@ function openNewOrder(){
     </div>`);
   itemRows=0; $('#itemRows').innerHTML=''; addItemRow(); updateVendorPicker();
 }
-function materialOptions(){ return (State.config.lists.MaterialList||[]).map(m=>`<option>${esc(m)}</option>`).join(''); }
+function materialOptions(){
+  const items=State.items||[];
+  if(!items.length){ return (State.config.lists.MaterialList||[]).map(m=>`<option>${esc(m)}</option>`).join(''); }
+  const byCat={};
+  items.forEach(i=>{ const c=i.Category||'Other'; (byCat[c]=byCat[c]||[]).push(i); });
+  return Object.keys(byCat).sort().map(cat=>
+    `<optgroup label="${esc(cat)}">${byCat[cat].map(i=>`<option value="${esc(i.Item)}" data-unit="${esc(i.Unit||'')}">${esc(i.Item)}</option>`).join('')}</optgroup>`
+  ).join('');
+}
 function unitOptions(){ return (State.config.lists.Units||[]).map(u=>`<option>${esc(u)}</option>`).join(''); }
+function itemPicked(sel){
+  const opt=sel.selectedOptions[0];
+  const unit=opt?opt.dataset.unit:'';
+  const row=sel.closest('.item-row');
+  if(unit && row){
+    const us=row.querySelector('[data-f="unit"]');
+    if(us){ if(![...us.options].some(o=>o.value===unit)) us.add(new Option(unit,unit)); us.value=unit; }
+  }
+  itemsChanged();
+}
 function addItemRow(){
   const id=++itemRows;
   const row=document.createElement('div'); row.className='item-row'; row.dataset.id=id;
   row.innerHTML=`
     <div class="field"><label>Material</label>
-      <select data-f="material" onchange="itemsChanged()"><option value="">Select</option>${materialOptions()}</select></div>
+      <select data-f="material" onchange="itemPicked(this)"><option value="">Select</option>${materialOptions()}</select></div>
     <div class="field"><label>Qty</label><input type="number" min="0" step="any" data-f="qty" oninput="recalcTotal()"></div>
-    <div class="field"><label>Unit</label><select data-f="unit">${unitOptions()}</select></div>
+    <div class="field"><label>Unit</label><select data-f="unit"><option value="">—</option>${unitOptions()}</select></div>
     <div class="field"><label>Rate</label><input type="number" min="0" step="any" data-f="rate" oninput="recalcTotal()"></div>
     <button class="rm" onclick="this.closest('.item-row').remove();itemsChanged()" title="Remove">✕</button>`;
   $('#itemRows').appendChild(row);
@@ -638,7 +662,7 @@ async function saveVendor(vendorId){
 function openMaterialMap(vendorId){
   const v=State.vendors.find(x=>x.VendorID==vendorId);
   const maps=State.vendorMaterials.filter(m=>m.VendorID==vendorId);
-  const mats=State.config.lists.MaterialList||[]; const tags=cfgList('VendorTags',['Preferred','Approved','Trial','Blacklisted']);
+  const mats=itemNames(); const tags=cfgList('VendorTags',['Preferred','Approved','Trial','Blacklisted']);
   openModal('Materials — '+(v?v.Name:vendorId), `
     ${maps.length?`<div class="map-list">
       <div class="map-row map-head"><span>Material</span><span>Tag</span><span>Last Rate</span><span>Remarks</span><span></span></div>
@@ -697,7 +721,7 @@ async function deleteMap(vendorId, material){
  *  MASTERS  (manage Config lists: items, units, etc.)
  * ========================================================= */
 const MASTER_GROUPS = [
-  {key:'MaterialList',     title:'Materials / Items'},
+  {key:'ItemCategories',   title:'Item Categories'},
   {key:'Units',            title:'Units'},
   {key:'VendorCategories', title:'Vendor Categories'},
   {key:'PaymentTerms',     title:'Payment Terms'},
@@ -705,9 +729,68 @@ const MASTER_GROUPS = [
   {key:'FollowUpTypes',    title:'Follow-up Types'}
 ];
 function renderMasters(){
+  const items=[...(State.items||[])].sort((a,b)=>String(a.Category).localeCompare(String(b.Category))||String(a.Item).localeCompare(String(b.Item)));
+  const byCat={}; items.forEach(i=>{ const c=i.Category||'Other'; (byCat[c]=byCat[c]||[]).push(i); });
   $('#viewRoot').innerHTML = `
-    <p class="masters-note">Add or edit dropdown values used across the app. Changes save to the Config sheet instantly.</p>
+    <div class="section-actions"><button class="btn btn-primary" onclick="openItemForm()">+ Add Item</button><div class="spacer"></div></div>
+    <div class="panel">
+      <div class="panel-head"><h3>Items</h3><span class="stat-hint">${items.length} item${items.length===1?'':'s'}</span></div>
+      <div class="panel-body">
+        ${items.length ? Object.keys(byCat).sort().map(cat=>`
+          <div class="item-cat-group">
+            <div class="item-cat-label">${catIcon(cat)} ${esc(cat)} <span style="color:var(--muted)">· ${byCat[cat].length}</span></div>
+            <div class="master-chips">
+              ${byCat[cat].map(i=>`<span class="master-chip">
+                <span>${esc(i.Item)}${i.Unit?` <em style="color:var(--muted);font-style:normal">· ${esc(i.Unit)}</em>`:''}</span>
+                <button title="Edit" data-i="${esc(i.Item)}" onclick="openItemForm(this.dataset.i)">✎</button>
+                <button title="Delete" data-i="${esc(i.Item)}" onclick="deleteItemMaster(this.dataset.i)">✕</button>
+              </span>`).join('')}
+            </div>
+          </div>`).join('') : emptyState('No items yet','Click "+ Add Item" to create your first item')}
+      </div>
+    </div>
+    <p class="masters-note">Below lists feed the dropdowns across the app. Changes save to the Config sheet instantly.</p>
     ${MASTER_GROUPS.map(masterPanel).join('')}`;
+}
+
+let itemFormCat='';
+function openItemForm(itemName){
+  const editing = itemName ? (State.items||[]).find(x=>x.Item==itemName) : null;
+  itemFormCat = editing ? (editing.Category||'') : '';
+  const cats = State.config.lists.ItemCategories || [];
+  const units = State.config.lists.Units || [];
+  openModal(editing?'Edit Item':'Add Item', `
+    <p class="mini-head">Step 1 — Category <span class="req">*</span></p>
+    <div class="cat-grid" id="catGrid">
+      ${cats.map(c=>`<button type="button" class="cat-card ${c===itemFormCat?'sel':''}" data-c="${esc(c)}" onclick="pickCat(this)">${catIcon(c)} ${esc(c)}</button>`).join('')}
+    </div>
+    <p class="mini-head" style="margin-top:20px">Step 2 — Details</p>
+    <div class="form-grid">
+      <div class="field"><label>Item Name <span class="req">*</span></label><input id="itName" value="${editing?esc(editing.Item):''}"></div>
+      <div class="field"><label>Unit</label><select id="itUnit"><option value="">—</option>${units.map(u=>`<option ${editing&&editing.Unit===u?'selected':''}>${esc(u)}</option>`).join('')}</select></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-light" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="itSave" onclick="saveItem(${editing?`'${esc(editing.Item)}'`:''})">Save Item</button>
+    </div>`);
+}
+function pickCat(btn){ itemFormCat=btn.dataset.c; $$('#catGrid .cat-card').forEach(b=>b.classList.remove('sel')); btn.classList.add('sel'); }
+async function saveItem(oldName){
+  const name=$('#itName').value.trim(); const unit=$('#itUnit').value;
+  if(!itemFormCat) return toast('Select a category','error');
+  if(!name) return toast('Item name required','error');
+  const btn=$('#itSave'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
+  try{
+    if(oldName) await api({action:'updateItem',old:oldName,Item:name,Category:itemFormCat,Unit:unit});
+    else await api({action:'addItem',Item:name,Category:itemFormCat,Unit:unit});
+    toast(oldName?'Item updated':'Item added','success');
+    closeModal(); await loadAll(); renderMasters();
+  }catch(e){ toast(e.message,'error'); btn.disabled=false; btn.textContent='Save Item'; }
+}
+async function deleteItemMaster(name){
+  if(!confirm('Delete "'+name+'"?')) return;
+  try{ await api({action:'deleteItem',Item:name}); toast('Item deleted','success'); await loadAll(); renderMasters(); }
+  catch(e){ toast(e.message,'error'); }
 }
 function masterPanel(g){
   const items = State.config.lists[g.key] || [];
