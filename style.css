@@ -302,6 +302,22 @@ tbody tr:last-child td{border-bottom:none}
 .info-line span:first-child{color:var(--muted)}
 
 /* editable vendor-material map rows */
+.mini-head{font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);font-weight:700;margin:0 0 10px}
+.vendor-picker{display:flex;flex-direction:column;gap:10px}
+.vp-empty{font-size:13px;color:var(--muted);padding:10px 12px;background:#fbfbfd;border:1px dashed var(--border);border-radius:10px}
+.vp-card{border:1.5px solid var(--border);border-radius:12px;padding:12px 14px;cursor:pointer;transition:border-color .18s,box-shadow .18s,transform .12s;background:#fff;animation:floatIn .25s ease}
+.vp-card:hover{border-color:var(--accent);box-shadow:0 4px 14px rgba(99,91,255,.14)}
+.vp-card.sel{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.vp-card.dis{opacity:.6;cursor:not-allowed;background:#fdf6f5;border-color:#f2cdc8}
+.vp-card.dis:hover{box-shadow:none;transform:none}
+.vp-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.vp-name{font-weight:700;font-size:14px}
+.vp-cover{margin-left:auto;font-size:11.5px;color:var(--muted);font-weight:600}
+.vp-tags{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}
+.vp-tags .badge{font-size:11px}
+.vp-more select{width:100%;padding:9px 12px;border:1px dashed var(--border);border-radius:10px;background:#fbfbfd;outline:none}
+.vp-more select:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+
 .map-list{margin-bottom:16px;display:flex;flex-direction:column;gap:8px}
 .map-row{display:grid;grid-template-columns:1.4fr 1fr 0.9fr 1.2fr auto;gap:8px;align-items:center}
 .map-row.map-head{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:600;padding:0 2px}
