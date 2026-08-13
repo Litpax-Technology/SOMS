@@ -258,6 +258,8 @@ tbody tr:last-child td{border-bottom:none}
   padding:12px;border:1px dashed var(--border);border-radius:10px;margin-bottom:10px;
   animation:floatIn .3s ease;background:#fcfcfe;
 }
+.item-row .field{min-width:0}
+.item-row .field input,.item-row .field select{width:100%;min-width:0}
 .item-row .rm{color:var(--red);font-size:18px;padding:8px;border-radius:8px;transition:background .15s}
 .item-row .rm:hover{background:var(--red-bg)}
 .order-total{display:flex;justify-content:flex-end;gap:10px;font-weight:700;font-size:16px;padding:10px 4px 4px}
