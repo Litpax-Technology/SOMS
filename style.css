@@ -301,6 +301,21 @@ tbody tr:last-child td{border-bottom:none}
 .info-line{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px dashed var(--border);font-size:13px}
 .info-line span:first-child{color:var(--muted)}
 
+/* editable vendor-material map rows */
+.map-list{margin-bottom:16px;display:flex;flex-direction:column;gap:8px}
+.map-row{display:grid;grid-template-columns:1.4fr 1fr 0.9fr 1.2fr auto;gap:8px;align-items:center}
+.map-row.map-head{font-size:11px;text-transform:uppercase;letter-spacing:.4px;color:var(--muted);font-weight:600;padding:0 2px}
+.map-row .map-name{font-weight:600;font-size:13px}
+.map-row select,.map-row input{min-width:0;width:100%;padding:8px 10px;border:1px solid var(--border);border-radius:8px;background:#fff;outline:none;transition:border-color .15s,box-shadow .15s}
+.map-row select:focus,.map-row input:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.map-btns{display:flex;gap:6px}
+@media (max-width:560px){
+  .map-row{grid-template-columns:1fr 1fr;gap:6px}
+  .map-row.map-head{display:none}
+  .map-row .map-name{grid-column:1/-1}
+  .map-btns{grid-column:1/-1}
+}
+
 /* ================= TOASTS ================= */
 .toast-wrap{position:fixed;top:20px;right:20px;z-index:80;display:flex;flex-direction:column;gap:10px}
 .toast{
