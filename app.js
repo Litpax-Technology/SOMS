@@ -132,7 +132,7 @@ async function refresh(){
 /* =========================================================
  *  ROUTER
  * ========================================================= */
-const TITLES = {dashboard:'Dashboard',orders:'Orders',receiving:'Receiving',followups:'Follow-ups',vendors:'Vendors'};
+const TITLES = {dashboard:'Dashboard',orders:'Orders',receiving:'Receiving',followups:'Follow-ups',vendors:'Vendors',masters:'Masters'};
 function switchView(v){
   State.view = v;
   $$('.nav-item').forEach(n=>n.classList.toggle('active', n.dataset.view===v));
@@ -143,7 +143,7 @@ function switchView(v){
 function render(){
   const root = $('#viewRoot');
   root.style.animation='none'; void root.offsetWidth; root.style.animation='fadeIn .35s ease';
-  ({dashboard:renderDashboard,orders:renderOrders,receiving:renderReceiving,followups:renderFollowups,vendors:renderVendors}[State.view])();
+  ({dashboard:renderDashboard,orders:renderOrders,receiving:renderReceiving,followups:renderFollowups,vendors:renderVendors,masters:renderMasters}[State.view])();
 }
 
 /* =========================================================
@@ -691,6 +691,62 @@ async function deleteMap(vendorId, material){
     await api({action:'deleteVendorMaterial',VendorID:vendorId,Material:material});
     toast('Material removed','success'); await loadAll(); openMaterialMap(vendorId); renderVendorTable();
   }catch(e){ toast(e.message,'error'); }
+}
+
+/* =========================================================
+ *  MASTERS  (manage Config lists: items, units, etc.)
+ * ========================================================= */
+const MASTER_GROUPS = [
+  {key:'MaterialList',     title:'Materials / Items'},
+  {key:'Units',            title:'Units'},
+  {key:'VendorCategories', title:'Vendor Categories'},
+  {key:'PaymentTerms',     title:'Payment Terms'},
+  {key:'VendorTags',       title:'Vendor Tags'},
+  {key:'FollowUpTypes',    title:'Follow-up Types'}
+];
+function renderMasters(){
+  $('#viewRoot').innerHTML = `
+    <p class="masters-note">Add or edit dropdown values used across the app. Changes save to the Config sheet instantly.</p>
+    ${MASTER_GROUPS.map(masterPanel).join('')}`;
+}
+function masterPanel(g){
+  const items = State.config.lists[g.key] || [];
+  return `<div class="panel">
+    <div class="panel-head"><h3>${g.title}</h3><span class="stat-hint">${items.length} item${items.length===1?'':'s'}</span></div>
+    <div class="panel-body">
+      <div class="master-chips">
+        ${items.length ? items.map(v=>`<span class="master-chip">
+            <span>${esc(v)}</span>
+            <button title="Edit" onclick="editMaster('${g.key}',this)" data-v="${esc(v)}">✎</button>
+            <button title="Delete" onclick="deleteMaster('${g.key}',this)" data-v="${esc(v)}">✕</button>
+          </span>`).join('') : '<span class="stat-hint">None yet</span>'}
+      </div>
+      <div class="master-add">
+        <input id="add_${g.key}" placeholder="Add new…" onkeydown="if(event.key==='Enter')addMaster('${g.key}')">
+        <button class="btn btn-light btn-sm" onclick="addMaster('${g.key}')">+ Add</button>
+      </div>
+    </div>
+  </div>`;
+}
+async function addMaster(list){
+  const inp=$('#add_'+list); const value=inp.value.trim();
+  if(!value) return;
+  inp.disabled=true;
+  try{ await api({action:'addConfigItem',list,value}); toast('Added','success'); await loadAll(); renderMasters(); }
+  catch(e){ toast(e.message,'error'); inp.disabled=false; }
+}
+async function editMaster(list, btn){
+  const oldV=btn.dataset.v;
+  const nv=prompt('Rename "'+oldV+'" to:', oldV); if(nv===null) return;
+  const value=nv.trim(); if(!value || value===oldV) return;
+  try{ await api({action:'updateConfigItem',list,old:oldV,value}); toast('Updated','success'); await loadAll(); renderMasters(); }
+  catch(e){ toast(e.message,'error'); }
+}
+async function deleteMaster(list, btn){
+  const value=btn.dataset.v;
+  if(!confirm('Delete "'+value+'"?')) return;
+  try{ await api({action:'deleteConfigItem',list,value}); toast('Deleted','success'); await loadAll(); renderMasters(); }
+  catch(e){ toast(e.message,'error'); }
 }
 
 /* =========================================================
