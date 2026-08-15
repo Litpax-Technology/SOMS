@@ -151,7 +151,21 @@ function allowedViews(){ const r=State.user&&State.user.Role; return ROLE_VIEWS[
 function applyRoleNav(){
   const allow=allowedViews();
   $$('.nav-item').forEach(n=> n.style.display = allow.includes(n.dataset.view)?'':'none');
+  const wrap=$('#poSearchWrap'); if(wrap) wrap.style.display = allow.includes('orders') ? '' : 'none';
 }
+function poSearch(){
+  const q=($('#poSearch').value||'').toLowerCase().trim();
+  const box=$('#poSearchResults');
+  if(!q){ box.innerHTML=''; box.classList.remove('show'); return; }
+  const matches=State.orders.filter(o=>String(o.PO_No).toLowerCase().includes(q)||vendorName(o.VendorID).toLowerCase().includes(q))
+    .sort((a,b)=>String(b.PO_No).localeCompare(String(a.PO_No))).slice(0,8);
+  if(!matches.length){ box.innerHTML='<div class="po-sr-empty">No matching PO</div>'; box.classList.add('show'); return; }
+  box.innerHTML=matches.map(o=>`<div class="po-sr-item" onclick="pickPO('${esc(o.PO_No)}')">
+    <b>${esc(o.PO_No)}</b><span>${esc(vendorName(o.VendorID))} · ${statusBadge(o.Status)}</span></div>`).join('');
+  box.classList.add('show');
+}
+function pickPO(po){ $('#poSearch').value=''; $('#poSearchResults').classList.remove('show'); openPODetail(po); }
+function poSearchEnter(e){ if(e.key==='Enter'){ const first=$('#poSearchResults .po-sr-item'); if(first) first.click(); } }
 function switchView(v){
   if(!allowedViews().includes(v)) return;
   State.view = v;
@@ -1216,6 +1230,9 @@ function init(){
   $('#pinInput').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
   $('#logoutBtn').addEventListener('click', ()=>location.reload());
   $('#refreshBtn').addEventListener('click', refresh);
+  $('#poSearch').addEventListener('input', poSearch);
+  $('#poSearch').addEventListener('keydown', poSearchEnter);
+  document.addEventListener('click', e=>{ if(!e.target.closest('.po-search')){ const b=$('#poSearchResults'); if(b) b.classList.remove('show'); } });
   $('#modalClose').addEventListener('click', closeModal);
   $('#hamburger').addEventListener('click', openSidebar);
   $('#sidebarOverlay').addEventListener('click', closeSidebar);
