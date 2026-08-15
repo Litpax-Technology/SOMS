@@ -5,7 +5,7 @@
 const State = {
   user: null,
   config: { lists:{}, settings:{} },
-  vendors: [], vendorMaterials: [], items: [], orders: [], orderItems: [], receiving: [], followups: [], transport: [],
+  vendors: [], vendorMaterials: [], items: [], orders: [], orderItems: [], receiving: [], followups: [], transport: [], transportFollowups: [],
   view: 'dashboard'
 };
 
@@ -129,6 +129,7 @@ async function loadAll(){
   State.receiving = d.receiving||[];
   State.followups = d.followups||[];
   State.transport = d.transport||[];
+  State.transportFollowups = d.transportFollowups||[];
 }
 async function refresh(){
   const r = $('#refreshBtn'); r.classList.add('spinning');
@@ -854,21 +855,39 @@ function freightBadge(s){
     ? '<span class="badge b-green">Paid</span>'
     : '<span class="badge b-amber">Pending</span>';
 }
+const TRANSIT_STATUS = ['In Transit','Out for Delivery','Arrived','Delayed'];
+function transitBadge(s){
+  if(!s) return '<span class="badge b-gray">—</span>';
+  const map={'In Transit':'b-blue','Out for Delivery':'b-amber','Arrived':'b-green','Delayed':'b-red'};
+  return `<span class="badge ${map[s]||'b-gray'}">${esc(s)}</span>`;
+}
+function tfOf(id){ return (State.transportFollowups||[]).filter(f=>f.ConsignmentID==id)
+  .sort((a,b)=>String(b.TFUID).localeCompare(String(a.TFUID))); }
+function trackingDue(){
+  // consignments not Arrived, whose latest next-follow-up date is today or past
+  return (State.transport||[]).filter(c=>{
+    if(c.TransitStatus==='Arrived') return false;
+    const fs=tfOf(c.ConsignmentID).filter(f=>f.NextFollowUpDate);
+    if(!fs.length) return false;
+    return String(fs[0].NextFollowUpDate) <= todayStr();
+  });
+}
 function renderTransport(){
   const list=State.transport||[];
-  // Litpax-owned freight only counts toward our settlement liability
   const ours=list.filter(c=>String(c.FreightPaidBy)==='Litpax');
   const pending=ours.filter(c=>c.FreightStatus!=='Paid').reduce((a,c)=>a+(Number(c.FreightAmount)||0),0);
   const paidMonth=ours.filter(c=>c.FreightStatus==='Paid' && String(c.PaidDate||'').slice(0,7)===todayStr().slice(0,7))
     .reduce((a,c)=>a+(Number(c.FreightAmount)||0),0);
-  const pendingCount=ours.filter(c=>c.FreightStatus!=='Paid').length;
+  const inTransit=list.filter(c=>c.TransitStatus && c.TransitStatus!=='Arrived').length;
+  const dueCount=trackingDue().length;
 
   $('#viewRoot').innerHTML=`
     <div class="stat-grid">
       ${statCard('Consignments', list.length, 'All inbound', '', 0)}
-      ${statCard('Freight Pending', money(pending), 'Litpax to pay', pending?'warn':'good', 1)}
-      ${statCard('To-Pay Count', pendingCount, 'Unsettled (Litpax)', pendingCount?'danger':'good', 2)}
-      ${statCard('Paid This Month', money(paidMonth), 'Freight settled', 'good', 3)}
+      ${statCard('In Transit', inTransit, 'Not yet arrived', inTransit?'warn':'good', 1)}
+      ${statCard('Tracking Due', dueCount, 'Follow-up due', dueCount?'danger':'good', 2)}
+      ${statCard('Freight Pending', money(pending), 'Litpax to pay', pending?'warn':'good', 3)}
+      ${statCard('Paid This Month', money(paidMonth), 'Freight settled', 'good', 4)}
     </div>
     <div class="section-actions">
       <button class="btn btn-primary" onclick="openConsignment()">+ Add Consignment</button><div class="spacer"></div>
@@ -879,12 +898,15 @@ function renderTransport(){
         <option value="">All transporters</option>
         ${(State.config.lists.Transporters||[]).map(t=>`<option>${esc(t)}</option>`).join('')}
       </select>
+      <select id="tTransit" onchange="renderTransportTable()">
+        <option value="">All transit</option>${TRANSIT_STATUS.map(s=>`<option>${esc(s)}</option>`).join('')}
+      </select>
       <select id="tStatus" onchange="renderTransportTable()">
         <option value="">All freight</option><option>Pending</option><option>Paid</option>
       </select>
     </div>
     <div class="panel"><div class="panel-body flush"><div class="table-wrap"><table>
-      <thead><tr><th>ID</th><th>Date</th><th>PO No</th><th>Transporter</th><th>LR No</th><th>Vehicle</th><th>Pkgs</th><th>Freight</th><th>Paid By</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>ID</th><th>Date</th><th>PO No</th><th>Transporter</th><th>LR No</th><th>Transit</th><th>Location / ETA</th><th>Freight</th><th>Payment</th><th></th></tr></thead>
       <tbody id="transportTbody"></tbody>
     </table></div></div></div>`;
   animateCounts();
@@ -892,26 +914,87 @@ function renderTransport(){
 }
 function renderTransportTable(){
   const q=($('#tSearch')?.value||'').toLowerCase();
-  const ft=$('#tTransporter')?.value||''; const fs=$('#tStatus')?.value||'';
+  const ft=$('#tTransporter')?.value||''; const fs=$('#tStatus')?.value||''; const ftr=$('#tTransit')?.value||'';
   let list=[...(State.transport||[])].sort((a,b)=>String(b.ConsignmentID).localeCompare(String(a.ConsignmentID)));
   list=list.filter(c=>{
     const okQ=!q||[c.LR_No,c.PO_No,c.VehicleNo,c.Transporter].some(v=>String(v||'').toLowerCase().includes(q));
-    return okQ && (!ft||c.Transporter===ft) && (!fs||c.FreightStatus===fs);
+    return okQ && (!ft||c.Transporter===ft) && (!fs||c.FreightStatus===fs) && (!ftr||c.TransitStatus===ftr);
   });
   const tb=$('#transportTbody');
-  if(!list.length){ tb.innerHTML=`<tr><td colspan="11">${emptyState('No consignments yet','Add your first inbound consignment')}</td></tr>`; return; }
-  tb.innerHTML=list.map(c=>`<tr>
-    <td class="row-strong">${esc(c.ConsignmentID)}</td>
-    <td>${esc(c.Date)}</td><td>${esc(c.PO_No||'—')}</td><td>${esc(c.Transporter||'')}</td>
-    <td>${esc(c.LR_No||'')}</td><td>${esc(c.VehicleNo||'')}</td><td>${esc(c.Packages||'')}</td>
-    <td class="mono">${c.FreightAmount?money(c.FreightAmount):'—'}</td>
-    <td>${esc(c.FreightPaidBy||'—')}</td>
-    <td>${freightBadge(c.FreightStatus)}</td>
-    <td>
-      ${(c.FreightPaidBy==='Litpax'&&c.FreightStatus!=='Paid')?`<button class="btn btn-light btn-sm" onclick="markFreightPaid('${esc(c.ConsignmentID)}')">Mark Paid</button>`:''}
-      <button class="link-btn" onclick="openConsignment('${esc(c.ConsignmentID)}')">Edit</button>
-      <button class="link-btn" onclick="deleteConsignmentUI('${esc(c.ConsignmentID)}')">Delete</button>
-    </td></tr>`).join('');
+  if(!list.length){ tb.innerHTML=`<tr><td colspan="10">${emptyState('No consignments yet','Add your first inbound consignment')}</td></tr>`; return; }
+  tb.innerHTML=list.map(c=>{
+    const loc=c.CurrentLocation?esc(c.CurrentLocation):'';
+    const eta=c.ETA?`<span style="color:var(--muted)">ETA ${esc(c.ETA)}</span>`:'';
+    const locEta=(loc||eta)?`${loc}${loc&&eta?' · ':''}${eta}`:'—';
+    return `<tr>
+      <td class="row-strong">${esc(c.ConsignmentID)}</td>
+      <td>${esc(c.Date)}</td><td>${esc(c.PO_No||'—')}</td><td>${esc(c.Transporter||'')}</td>
+      <td>${esc(c.LR_No||'')}</td>
+      <td>${transitBadge(c.TransitStatus)}</td>
+      <td style="font-size:12.5px">${locEta}</td>
+      <td class="mono">${c.FreightAmount?money(c.FreightAmount):'—'}</td>
+      <td>${freightBadge(c.FreightStatus)}</td>
+      <td>
+        <button class="btn btn-light btn-sm" onclick="openTracking('${esc(c.ConsignmentID)}')">Track</button>
+        ${(c.FreightPaidBy==='Litpax'&&c.FreightStatus!=='Paid')?`<button class="link-btn" onclick="markFreightPaid('${esc(c.ConsignmentID)}')">Paid</button>`:''}
+        <button class="link-btn" onclick="openConsignment('${esc(c.ConsignmentID)}')">Edit</button>
+        <button class="link-btn" onclick="deleteConsignmentUI('${esc(c.ConsignmentID)}')">Delete</button>
+      </td></tr>`;
+  }).join('');
+}
+
+/* ----- Consignment tracking (follow-ups: kaha pahuncha / kab aayega) ----- */
+function openTracking(id){
+  const c=(State.transport||[]).find(x=>x.ConsignmentID==id);
+  const hist=tfOf(id);
+  const types=cfgList('FollowUpTypes',['Call','WhatsApp','Email']);
+  openModal('Tracking — '+id+(c&&c.Transporter?` · ${c.Transporter}`:''), `
+    ${c?`<div class="track-summary">
+      <span>Transit: ${transitBadge(c.TransitStatus)}</span>
+      ${c.CurrentLocation?`<span>Location: <b>${esc(c.CurrentLocation)}</b></span>`:''}
+      ${c.ETA?`<span>ETA: <b>${esc(c.ETA)}</b></span>`:''}
+    </div>`:''}
+    ${hist.length?`<div class="track-timeline">
+      ${hist.map(f=>`<div class="track-item">
+        <div class="track-dot"></div>
+        <div class="track-body">
+          <div class="track-line"><b>${esc(f.Date)}</b> · ${esc(f.Type)} ${f.TransitStatus?transitBadge(f.TransitStatus):''}</div>
+          ${f.Location?`<div>📍 ${esc(f.Location)}${f.ETA?` · ETA ${esc(f.ETA)}`:''}</div>`:(f.ETA?`<div>ETA ${esc(f.ETA)}</div>`:'')}
+          ${f.Outcome?`<div>${esc(f.Outcome)}</div>`:''}
+          ${f.SpokenWith?`<div style="color:var(--muted)">Spoke with ${esc(f.SpokenWith)}</div>`:''}
+          ${f.NextFollowUpDate?`<div style="color:var(--muted)">Next: ${esc(f.NextFollowUpDate)}</div>`:''}
+        </div>
+      </div>`).join('')}
+    </div>`:'<div class="empty" style="padding:14px"><span class="emoji">◔</span>No tracking updates yet</div>'}
+    <h4 class="mini-head" style="margin:18px 0 10px">Add Update</h4>
+    <div class="form-grid">
+      <div class="field"><label>Type</label><select id="tkType">${types.map(t=>`<option>${esc(t)}</option>`).join('')}</select></div>
+      <div class="field"><label>Date</label><input type="date" id="tkDate" value="${todayStr()}"></div>
+      <div class="field"><label>Current Location</label><input id="tkLoc" placeholder="e.g. Delhi hub"></div>
+      <div class="field"><label>ETA (expected arrival)</label><input type="date" id="tkETA"></div>
+      <div class="field"><label>Transit Status</label><select id="tkStatus">
+        <option value="">—</option>${TRANSIT_STATUS.map(s=>`<option ${c&&c.TransitStatus===s?'selected':''}>${esc(s)}</option>`).join('')}</select></div>
+      <div class="field"><label>Spoken With</label><input id="tkWith" placeholder="Transporter contact"></div>
+      <div class="field"><label>Next Follow-up Date</label><input type="date" id="tkNext"></div>
+      <div class="field"><label>Outcome</label><input id="tkOutcome" placeholder="e.g. Dispatched, reaching tomorrow"></div>
+      <div class="field full"><label>Remarks</label><input id="tkRemarks"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-light" onclick="closeModal()">Close</button>
+      <button class="btn btn-primary" id="tkSave" onclick="saveTracking('${esc(id)}')">Save Update</button>
+    </div>`);
+}
+async function saveTracking(id){
+  const next=$('#tkNext').value;
+  if(next && next<todayStr()) return toast('Next follow-up date must be today or later','error');
+  const btn=$('#tkSave'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
+  try{
+    await api({action:'addTransportFollowUp',ConsignmentID:id,Type:$('#tkType').value,Date:$('#tkDate').value,
+      Location:$('#tkLoc').value,ETA:$('#tkETA').value,TransitStatus:$('#tkStatus').value,SpokenWith:$('#tkWith').value,
+      NextFollowUpDate:next,Outcome:$('#tkOutcome').value,Remarks:$('#tkRemarks').value});
+    toast('Tracking updated','success');
+    await loadAll(); openTracking(id); render();
+  }catch(e){ toast(e.message,'error'); btn.disabled=false; btn.textContent='Save Update'; }
 }
 function openConsignment(id){
   const c = id ? (State.transport||[]).find(x=>x.ConsignmentID==id) : null;
