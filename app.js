@@ -141,11 +141,11 @@ async function refresh(){
 /* =========================================================
  *  ROUTER
  * ========================================================= */
-const TITLES = {dashboard:'Dashboard',orders:'Orders',receiving:'Receiving',followups:'Follow-ups',vendors:'Vendors',masters:'Masters',transport:'Transport'};
+const TITLES = {dashboard:'Dashboard',orders:'Orders',receiving:'Receiving',followups:'Follow-ups',vendors:'Vendors',masters:'Masters',transport:'Consignments',tracking:'Tracking',freight:'Freight'};
 const ROLE_VIEWS = {
-  Admin:     ['dashboard','orders','receiving','followups','vendors','masters','transport'],
+  Admin:     ['dashboard','orders','receiving','followups','vendors','masters','transport','tracking','freight'],
   Purchase:  ['dashboard','orders','receiving','followups','vendors','masters'],
-  Transport: ['transport']
+  Transport: ['transport','tracking','freight']
 };
 function allowedViews(){ const r=State.user&&State.user.Role; return ROLE_VIEWS[r] || ROLE_VIEWS.Admin; }
 function applyRoleNav(){
@@ -163,7 +163,7 @@ function switchView(v){
 function render(){
   const root = $('#viewRoot');
   root.style.animation='none'; void root.offsetWidth; root.style.animation='fadeIn .35s ease';
-  ({dashboard:renderDashboard,orders:renderOrders,receiving:renderReceiving,followups:renderFollowups,vendors:renderVendors,masters:renderMasters,transport:renderTransport}[State.view])();
+  ({dashboard:renderDashboard,orders:renderOrders,receiving:renderReceiving,followups:renderFollowups,vendors:renderVendors,masters:renderMasters,transport:renderTransport,tracking:renderTracking,freight:renderFreight}[State.view])();
 }
 
 /* =========================================================
@@ -887,11 +887,8 @@ function trackingDue(){
 }
 function renderTransport(){
   const list=State.transport||[];
-  const ours=list.filter(c=>String(c.FreightPaidBy)==='Litpax');
-  const pending=ours.filter(c=>c.FreightStatus!=='Paid').reduce((a,c)=>a+(Number(c.FreightAmount)||0),0);
-  const paidMonth=ours.filter(c=>c.FreightStatus==='Paid' && String(c.PaidDate||'').slice(0,7)===todayStr().slice(0,7))
-    .reduce((a,c)=>a+(Number(c.FreightAmount)||0),0);
   const inTransit=list.filter(c=>c.TransitStatus && c.TransitStatus!=='Arrived').length;
+  const arrived=list.filter(c=>c.TransitStatus==='Arrived').length;
   const dueCount=trackingDue().length;
 
   $('#viewRoot').innerHTML=`
@@ -899,8 +896,7 @@ function renderTransport(){
       ${statCard('Consignments', list.length, 'All inbound', '', 0)}
       ${statCard('In Transit', inTransit, 'Not yet arrived', inTransit?'warn':'good', 1)}
       ${statCard('Tracking Due', dueCount, 'Follow-up due', dueCount?'danger':'good', 2)}
-      ${statCard('Freight Pending', money(pending), 'Litpax to pay', pending?'warn':'good', 3)}
-      ${statCard('Paid This Month', money(paidMonth), 'Freight settled', 'good', 4)}
+      ${statCard('Arrived', arrived, 'Delivered', 'good', 3)}
     </div>
     <div class="section-actions">
       <button class="btn btn-primary" onclick="openConsignment()">+ Add Consignment</button><div class="spacer"></div>
@@ -1100,6 +1096,69 @@ async function deleteConsignmentUI(id){
   if(!confirm('Delete consignment '+id+'?')) return;
   try{ await api({action:'deleteConsignment',ConsignmentID:id}); toast('Deleted','success'); await loadAll(); render(); }
   catch(e){ toast(e.message,'error'); }
+}
+
+/* ----- Tracking view (all consignment follow-ups) ----- */
+function renderTracking(){
+  const all=[...(State.transportFollowups||[])].sort((a,b)=>String(b.TFUID).localeCompare(String(a.TFUID)));
+  const due=trackingDue();
+  $('#viewRoot').innerHTML=`
+    ${due.length?`<div class="panel"><div class="panel-head"><h3>⏰ Tracking Due</h3></div>
+      <div class="panel-body flush"><div class="table-wrap"><table>
+      <thead><tr><th>Consignment</th><th>Transporter</th><th>Transit</th><th>Location / ETA</th><th></th></tr></thead>
+      <tbody>${due.map(c=>`<tr>
+        <td class="row-strong">${esc(c.ConsignmentID)}</td><td>${esc(c.Transporter||'')}</td>
+        <td>${transitBadge(c.TransitStatus)}</td>
+        <td>${c.CurrentLocation?esc(c.CurrentLocation):''}${c.ETA?` · ETA ${esc(c.ETA)}`:''}</td>
+        <td><button class="btn btn-light btn-sm" onclick="openTracking('${esc(c.ConsignmentID)}')">Track</button></td></tr>`).join('')}</tbody>
+      </table></div></div></div>`:''}
+    <div class="panel"><div class="panel-head"><h3>All Tracking Updates</h3></div>
+      <div class="panel-body flush">${all.length?`<div class="table-wrap"><table>
+      <thead><tr><th>Date</th><th>Consignment</th><th>Type</th><th>Location</th><th>ETA</th><th>Transit</th><th>Next</th><th></th></tr></thead>
+      <tbody>${all.map(f=>`<tr>
+        <td>${esc(f.Date)}</td><td class="row-strong">${esc(f.ConsignmentID)}</td>
+        <td><span class="badge b-blue">${esc(f.Type)}</span></td>
+        <td>${esc(f.Location||'')}</td><td>${esc(f.ETA||'')}</td>
+        <td>${f.TransitStatus?transitBadge(f.TransitStatus):'—'}</td>
+        <td>${esc(f.NextFollowUpDate||'—')}</td>
+        <td><button class="link-btn" onclick="openTracking('${esc(f.ConsignmentID)}')">Open</button></td></tr>`).join('')}</tbody>
+      </table></div>`:emptyState('No tracking updates yet','Open a consignment and add an update')}</div></div>`;
+}
+
+/* ----- Freight view (settlement / payments) ----- */
+function renderFreight(){
+  const list=(State.transport||[]).filter(c=>Number(c.FreightAmount)>0);
+  const ours=list.filter(c=>c.FreightPaidBy==='Litpax');
+  const pending=ours.filter(c=>c.FreightStatus!=='Paid').reduce((a,c)=>a+(Number(c.FreightAmount)||0),0);
+  const paidMonth=ours.filter(c=>c.FreightStatus==='Paid'&&String(c.PaidDate||'').slice(0,7)===todayStr().slice(0,7)).reduce((a,c)=>a+(Number(c.FreightAmount)||0),0);
+  const pendCount=ours.filter(c=>c.FreightStatus!=='Paid').length;
+  $('#viewRoot').innerHTML=`
+    <div class="stat-grid">
+      ${statCard('Freight Pending', money(pending), 'Litpax to pay', pending?'warn':'good',0)}
+      ${statCard('To-Pay Count', pendCount, 'Unsettled (Litpax)', pendCount?'danger':'good',1)}
+      ${statCard('Paid This Month', money(paidMonth), 'Freight settled','good',2)}
+    </div>
+    <div class="filters">
+      <select id="frStatus" onchange="renderFreightTable()"><option value="">All status</option><option>Pending</option><option>Paid</option></select>
+      <select id="frBy" onchange="renderFreightTable()"><option value="">All payers</option><option>Litpax</option><option>Vendor</option></select>
+    </div>
+    <div class="panel"><div class="panel-body flush"><div class="table-wrap"><table>
+      <thead><tr><th>Consignment</th><th>Date</th><th>Transporter</th><th>PO</th><th>Freight</th><th>Paid By</th><th>Status</th><th>Paid Date</th><th></th></tr></thead>
+      <tbody id="freightTbody"></tbody></table></div></div></div>`;
+  animateCounts(); renderFreightTable();
+}
+function renderFreightTable(){
+  const fs=$('#frStatus')?.value||''; const fb=$('#frBy')?.value||'';
+  let list=(State.transport||[]).filter(c=>Number(c.FreightAmount)>0)
+    .sort((a,b)=>String(b.ConsignmentID).localeCompare(String(a.ConsignmentID)))
+    .filter(c=>(!fs||c.FreightStatus===fs)&&(!fb||c.FreightPaidBy===fb));
+  const tb=$('#freightTbody');
+  if(!list.length){ tb.innerHTML=`<tr><td colspan="9">${emptyState('No freight records yet','')}</td></tr>`; return; }
+  tb.innerHTML=list.map(c=>`<tr>
+    <td class="row-strong">${esc(c.ConsignmentID)}</td><td>${esc(c.Date)}</td><td>${esc(c.Transporter||'')}</td>
+    <td>${esc(c.PO_No||'—')}</td><td class="mono">${money(c.FreightAmount)}</td><td>${esc(c.FreightPaidBy||'—')}</td>
+    <td>${freightBadge(c.FreightStatus)}</td><td>${esc(c.PaidDate||'—')}</td>
+    <td>${(c.FreightPaidBy==='Litpax'&&c.FreightStatus!=='Paid')?`<button class="btn btn-light btn-sm" onclick="markFreightPaid('${esc(c.ConsignmentID)}')">Mark Paid</button>`:''}</td></tr>`).join('');
 }
 
 /* =========================================================
