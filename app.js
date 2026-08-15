@@ -35,6 +35,12 @@ const todayStr = ()=>{ const d=new Date(); return d.toISOString().slice(0,10); }
 const money = n => '₹' + (Number(n)||0).toLocaleString('en-IN');
 function vendorName(id){ const v=State.vendors.find(x=>x.VendorID==id); return v?v.Name:id; }
 function cfgList(name, fb){ const a=State.config.lists[name]; return (a && a.length)?a:(fb||[]); }
+const PAGE_SIZE = 100;
+function capNote(total, cols){
+  return total>PAGE_SIZE
+    ? `<tr><td colspan="${cols}" class="cap-note">Showing latest ${PAGE_SIZE} of ${total} — use search / filters to find older records.</td></tr>`
+    : '';
+}
 function itemNames(){ const it=State.items||[]; return it.length? it.map(i=>i.Item) : (State.config.lists.MaterialList||[]); }
 function catIcon(cat){
   const m={'Cells':'🔋','BMS':'⚡','Charger':'🔌','Nickel/Busbar':'🟠','Box':'📦','IOT':'📡','Inverter':'🔧','Wire':'🧵','Consumables':'🧰','Tools':'🛠️','Packaging':'📦','Casing':'🧱','Hardware':'🔩'};
@@ -284,7 +290,8 @@ function renderOrderTable(){
   });
   const tb=$('#orderTbody');
   if(!list.length){ tb.innerHTML=`<tr><td colspan="9">${emptyState('No matching orders','')}</td></tr>`; return; }
-  tb.innerHTML=list.map(o=>{
+  const _t=list.length;
+  tb.innerHTML=list.slice(0,PAGE_SIZE).map(o=>{
     const p=orderProgress(o); const od=isOverdue(o);
     const exp=o.RevisedExpectedDate||o.OriginalExpectedDate||'—';
     return `<tr onclick="toggleDetail(this,'${esc(o.PO_No)}')">
@@ -300,7 +307,7 @@ function renderOrderTable(){
         <button class="link-btn" onclick="openPODetail('${esc(o.PO_No)}')">Details</button>
         ${(o.Status==='Ordered'||o.Status==='Partially Received')?`<button class="btn btn-light btn-sm" onclick="openReceiving('${esc(o.PO_No)}')">Receive</button>`:''}
       </td></tr>`;
-  }).join('');
+  }).join('')+capNote(_t,9);
 }
 function toggleDetail(row,po){
   const next=row.nextElementSibling;
@@ -629,17 +636,18 @@ function openPODetail(po){
  *  RECEIVING VIEW
  * ========================================================= */
 function renderReceiving(){
-  const list=[...State.receiving].sort((a,b)=>String(b.GRN_No).localeCompare(String(a.GRN_No)));
+  const full=[...State.receiving].sort((a,b)=>String(b.GRN_No).localeCompare(String(a.GRN_No)));
+  const list=full.slice(0,PAGE_SIZE);
   $('#viewRoot').innerHTML=`
     <div class="panel"><div class="panel-head"><h3>Receiving History (GRN)</h3></div>
-    <div class="panel-body flush">${list.length?`<div class="table-wrap"><table>
+    <div class="panel-body flush">${full.length?`<div class="table-wrap"><table>
       <thead><tr><th>GRN</th><th>PO No</th><th>Material</th><th>Received</th><th>Accepted</th><th>Rejected</th><th>Date</th><th>By</th></tr></thead>
       <tbody>${list.map(r=>`<tr>
         <td class="row-strong">${esc(r.GRN_No)}</td><td>${esc(r.PO_No)}</td><td>${esc(r.Material)}</td>
         <td class="mono">${esc(r.ReceivedQty)}</td>
         <td><span class="badge b-green">${esc(r.AcceptedQty)}</span></td>
         <td>${Number(r.RejectedQty)>0?`<span class="badge b-red">${esc(r.RejectedQty)}</span>`:'0'}</td>
-        <td>${esc(r.ReceivedDate)}</td><td>${esc(r.ReceivedBy||'')}</td></tr>`).join('')}</tbody>
+        <td>${esc(r.ReceivedDate)}</td><td>${esc(r.ReceivedBy||'')}</td></tr>`).join('')}${capNote(full.length,8)}</tbody>
     </table></div>`:emptyState('No receiving records yet','')}</div></div>`;
 }
 
@@ -647,8 +655,9 @@ function renderReceiving(){
  *  FOLLOW-UPS VIEW
  * ========================================================= */
 function renderFollowups(){
-  const list=[...State.followups].sort((a,b)=>String(b.Date||'').localeCompare(String(a.Date||'')));
-  const due=list.filter(f=>f.NextFollowUpDate && String(f.NextFollowUpDate)<=todayStr());
+  const full=[...State.followups].sort((a,b)=>String(b.Date||'').localeCompare(String(a.Date||'')));
+  const list=full.slice(0,PAGE_SIZE);
+  const due=full.filter(f=>f.NextFollowUpDate && String(f.NextFollowUpDate)<=todayStr());
   $('#viewRoot').innerHTML=`
     ${due.length?`<div class="panel"><div class="panel-head"><h3>⏰ Due Now</h3></div>
       <div class="panel-body flush"><div class="table-wrap"><table>
@@ -658,11 +667,11 @@ function renderFollowups(){
         <td><button class="btn btn-light btn-sm" onclick="openFollowUp('${esc(f.PO_No)}')">Follow-up</button></td></tr>`).join('')}</tbody>
       </table></div></div></div>`:''}
     <div class="panel"><div class="panel-head"><h3>All Follow-ups</h3></div>
-    <div class="panel-body flush">${list.length?`<div class="table-wrap"><table>
+    <div class="panel-body flush">${full.length?`<div class="table-wrap"><table>
       <thead><tr><th>Date</th><th>PO No</th><th>Type</th><th>Spoken With</th><th>Outcome</th><th>Next</th></tr></thead>
       <tbody>${list.map(f=>`<tr><td>${esc(f.Date)}</td><td class="row-strong">${esc(f.PO_No)}</td>
         <td><span class="badge b-blue">${esc(f.Type)}</span></td><td>${esc(f.SpokenWith||'')}</td>
-        <td>${esc(f.Outcome||'')}</td><td>${esc(f.NextFollowUpDate||'—')}</td></tr>`).join('')}</tbody>
+        <td>${esc(f.Outcome||'')}</td><td>${esc(f.NextFollowUpDate||'—')}</td></tr>`).join('')}${capNote(full.length,6)}</tbody>
     </table></div>`:emptyState('No follow-ups yet','')}</div></div>`;
 }
 
@@ -986,7 +995,8 @@ function renderTransportTable(){
   });
   const tb=$('#transportTbody');
   if(!list.length){ tb.innerHTML=`<tr><td colspan="10">${emptyState('No consignments yet','Add your first inbound consignment')}</td></tr>`; return; }
-  tb.innerHTML=list.map(c=>{
+  const _t=list.length;
+  tb.innerHTML=list.slice(0,PAGE_SIZE).map(c=>{
     const loc=c.CurrentLocation?esc(c.CurrentLocation):'';
     const eta=c.ETA?`<span style="color:var(--muted)">ETA ${esc(c.ETA)}</span>`:'';
     const locEta=(loc||eta)?`${loc}${loc&&eta?' · ':''}${eta}`:'—';
@@ -1004,7 +1014,7 @@ function renderTransportTable(){
         <button class="link-btn" onclick="openConsignment('${esc(c.ConsignmentID)}')">Edit</button>
         <button class="link-btn" onclick="deleteConsignmentUI('${esc(c.ConsignmentID)}')">Delete</button>
       </td></tr>`;
-  }).join('');
+  }).join('')+capNote(_t,10);
 }
 
 /* ----- Consignment tracking (follow-ups: kaha pahuncha / kab aayega) ----- */
@@ -1155,7 +1165,8 @@ async function deleteConsignmentUI(id){
 
 /* ----- Tracking view (all consignment follow-ups) ----- */
 function renderTracking(){
-  const all=[...(State.transportFollowups||[])].sort((a,b)=>String(b.TFUID).localeCompare(String(a.TFUID)));
+  const full=[...(State.transportFollowups||[])].sort((a,b)=>String(b.TFUID).localeCompare(String(a.TFUID)));
+  const all=full.slice(0,PAGE_SIZE);
   const due=trackingDue();
   $('#viewRoot').innerHTML=`
     ${due.length?`<div class="panel"><div class="panel-head"><h3>⏰ Tracking Due</h3></div>
@@ -1176,7 +1187,7 @@ function renderTracking(){
         <td>${esc(f.Location||'')}</td><td>${esc(f.ETA||'')}</td>
         <td>${f.TransitStatus?transitBadge(f.TransitStatus):'—'}</td>
         <td>${esc(f.NextFollowUpDate||'—')}</td>
-        <td><button class="link-btn" onclick="openTracking('${esc(f.ConsignmentID)}')">Open</button></td></tr>`).join('')}</tbody>
+        <td><button class="link-btn" onclick="openTracking('${esc(f.ConsignmentID)}')">Open</button></td></tr>`).join('')}${capNote(full.length,8)}</tbody>
       </table></div>`:emptyState('No tracking updates yet','Open a consignment and add an update')}</div></div>`;
 }
 
@@ -1209,11 +1220,12 @@ function renderFreightTable(){
     .filter(c=>(!fs||c.FreightStatus===fs)&&(!fb||c.FreightPaidBy===fb));
   const tb=$('#freightTbody');
   if(!list.length){ tb.innerHTML=`<tr><td colspan="9">${emptyState('No freight records yet','')}</td></tr>`; return; }
-  tb.innerHTML=list.map(c=>`<tr>
+  const _t=list.length;
+  tb.innerHTML=list.slice(0,PAGE_SIZE).map(c=>`<tr>
     <td class="row-strong">${esc(c.ConsignmentID)}</td><td>${esc(c.Date)}</td><td>${esc(c.Transporter||'')}</td>
     <td>${esc(c.PO_No||'—')}</td><td class="mono">${money(c.FreightAmount)}</td><td>${esc(c.FreightPaidBy||'—')}</td>
     <td>${freightBadge(c.FreightStatus)}</td><td>${esc(c.PaidDate||'—')}</td>
-    <td>${(c.FreightPaidBy==='Litpax'&&c.FreightStatus!=='Paid')?`<button class="btn btn-light btn-sm" onclick="markFreightPaid('${esc(c.ConsignmentID)}')">Mark Paid</button>`:''}</td></tr>`).join('');
+    <td>${(c.FreightPaidBy==='Litpax'&&c.FreightStatus!=='Paid')?`<button class="btn btn-light btn-sm" onclick="markFreightPaid('${esc(c.ConsignmentID)}')">Mark Paid</button>`:''}</td></tr>`).join('')+capNote(_t,9);
 }
 
 /* =========================================================
