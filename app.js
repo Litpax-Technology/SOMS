@@ -5,7 +5,7 @@
 const State = {
   user: null,
   config: { lists:{}, settings:{} },
-  vendors: [], vendorMaterials: [], items: [], orders: [], orderItems: [], receiving: [], followups: [],
+  vendors: [], vendorMaterials: [], items: [], orders: [], orderItems: [], receiving: [], followups: [], transport: [],
   view: 'dashboard'
 };
 
@@ -109,7 +109,8 @@ async function doLogin(){
     $('#userRole').textContent = u.Role;
     $('#userAvatar').textContent = (u.Name||'A').charAt(0).toUpperCase();
     await loadAll();
-    switchView('dashboard');
+    applyRoleNav();
+    switchView(allowedViews()[0] || 'dashboard');
   }catch(e){
     err.textContent = e.message;
   }finally{
@@ -127,6 +128,7 @@ async function loadAll(){
   State.orderItems = d.orderItems||[];
   State.receiving = d.receiving||[];
   State.followups = d.followups||[];
+  State.transport = d.transport||[];
 }
 async function refresh(){
   const r = $('#refreshBtn'); r.classList.add('spinning');
@@ -138,8 +140,19 @@ async function refresh(){
 /* =========================================================
  *  ROUTER
  * ========================================================= */
-const TITLES = {dashboard:'Dashboard',orders:'Orders',receiving:'Receiving',followups:'Follow-ups',vendors:'Vendors',masters:'Masters'};
+const TITLES = {dashboard:'Dashboard',orders:'Orders',receiving:'Receiving',followups:'Follow-ups',vendors:'Vendors',masters:'Masters',transport:'Transport'};
+const ROLE_VIEWS = {
+  Admin:     ['dashboard','orders','receiving','followups','vendors','masters','transport'],
+  Purchase:  ['dashboard','orders','receiving','followups','vendors','masters'],
+  Transport: ['transport']
+};
+function allowedViews(){ const r=State.user&&State.user.Role; return ROLE_VIEWS[r] || ROLE_VIEWS.Admin; }
+function applyRoleNav(){
+  const allow=allowedViews();
+  $$('.nav-item').forEach(n=> n.style.display = allow.includes(n.dataset.view)?'':'none');
+}
 function switchView(v){
+  if(!allowedViews().includes(v)) return;
   State.view = v;
   $$('.nav-item').forEach(n=>n.classList.toggle('active', n.dataset.view===v));
   $('#viewTitle').textContent = TITLES[v]||'';
@@ -149,7 +162,7 @@ function switchView(v){
 function render(){
   const root = $('#viewRoot');
   root.style.animation='none'; void root.offsetWidth; root.style.animation='fadeIn .35s ease';
-  ({dashboard:renderDashboard,orders:renderOrders,receiving:renderReceiving,followups:renderFollowups,vendors:renderVendors,masters:renderMasters}[State.view])();
+  ({dashboard:renderDashboard,orders:renderOrders,receiving:renderReceiving,followups:renderFollowups,vendors:renderVendors,masters:renderMasters,transport:renderTransport}[State.view])();
 }
 
 /* =========================================================
@@ -726,7 +739,8 @@ const MASTER_GROUPS = [
   {key:'VendorCategories', title:'Vendor Categories'},
   {key:'PaymentTerms',     title:'Payment Terms'},
   {key:'VendorTags',       title:'Vendor Tags'},
-  {key:'FollowUpTypes',    title:'Follow-up Types'}
+  {key:'FollowUpTypes',    title:'Follow-up Types'},
+  {key:'Transporters',     title:'Transporters'}
 ];
 function renderMasters(){
   const items=[...(State.items||[])].sort((a,b)=>String(a.Category).localeCompare(String(b.Category))||String(a.Item).localeCompare(String(b.Item)));
@@ -829,6 +843,141 @@ async function deleteMaster(list, btn){
   const value=btn.dataset.v;
   if(!confirm('Delete "'+value+'"?')) return;
   try{ await api({action:'deleteConfigItem',list,value}); toast('Deleted','success'); await loadAll(); renderMasters(); }
+  catch(e){ toast(e.message,'error'); }
+}
+
+/* =========================================================
+ *  TRANSPORT  (consignments + freight settlement)
+ * ========================================================= */
+function freightBadge(s){
+  return s==='Paid'
+    ? '<span class="badge b-green">Paid</span>'
+    : '<span class="badge b-amber">Pending</span>';
+}
+function renderTransport(){
+  const list=State.transport||[];
+  // Litpax-owned freight only counts toward our settlement liability
+  const ours=list.filter(c=>String(c.FreightPaidBy)==='Litpax');
+  const pending=ours.filter(c=>c.FreightStatus!=='Paid').reduce((a,c)=>a+(Number(c.FreightAmount)||0),0);
+  const paidMonth=ours.filter(c=>c.FreightStatus==='Paid' && String(c.PaidDate||'').slice(0,7)===todayStr().slice(0,7))
+    .reduce((a,c)=>a+(Number(c.FreightAmount)||0),0);
+  const pendingCount=ours.filter(c=>c.FreightStatus!=='Paid').length;
+
+  $('#viewRoot').innerHTML=`
+    <div class="stat-grid">
+      ${statCard('Consignments', list.length, 'All inbound', '', 0)}
+      ${statCard('Freight Pending', money(pending), 'Litpax to pay', pending?'warn':'good', 1)}
+      ${statCard('To-Pay Count', pendingCount, 'Unsettled (Litpax)', pendingCount?'danger':'good', 2)}
+      ${statCard('Paid This Month', money(paidMonth), 'Freight settled', 'good', 3)}
+    </div>
+    <div class="section-actions">
+      <button class="btn btn-primary" onclick="openConsignment()">+ Add Consignment</button><div class="spacer"></div>
+    </div>
+    <div class="filters">
+      <input class="search-box" id="tSearch" placeholder="Search LR / PO / vehicle..." oninput="renderTransportTable()">
+      <select id="tTransporter" onchange="renderTransportTable()">
+        <option value="">All transporters</option>
+        ${(State.config.lists.Transporters||[]).map(t=>`<option>${esc(t)}</option>`).join('')}
+      </select>
+      <select id="tStatus" onchange="renderTransportTable()">
+        <option value="">All freight</option><option>Pending</option><option>Paid</option>
+      </select>
+    </div>
+    <div class="panel"><div class="panel-body flush"><div class="table-wrap"><table>
+      <thead><tr><th>ID</th><th>Date</th><th>PO No</th><th>Transporter</th><th>LR No</th><th>Vehicle</th><th>Pkgs</th><th>Freight</th><th>Paid By</th><th>Status</th><th></th></tr></thead>
+      <tbody id="transportTbody"></tbody>
+    </table></div></div></div>`;
+  animateCounts();
+  renderTransportTable();
+}
+function renderTransportTable(){
+  const q=($('#tSearch')?.value||'').toLowerCase();
+  const ft=$('#tTransporter')?.value||''; const fs=$('#tStatus')?.value||'';
+  let list=[...(State.transport||[])].sort((a,b)=>String(b.ConsignmentID).localeCompare(String(a.ConsignmentID)));
+  list=list.filter(c=>{
+    const okQ=!q||[c.LR_No,c.PO_No,c.VehicleNo,c.Transporter].some(v=>String(v||'').toLowerCase().includes(q));
+    return okQ && (!ft||c.Transporter===ft) && (!fs||c.FreightStatus===fs);
+  });
+  const tb=$('#transportTbody');
+  if(!list.length){ tb.innerHTML=`<tr><td colspan="11">${emptyState('No consignments yet','Add your first inbound consignment')}</td></tr>`; return; }
+  tb.innerHTML=list.map(c=>`<tr>
+    <td class="row-strong">${esc(c.ConsignmentID)}</td>
+    <td>${esc(c.Date)}</td><td>${esc(c.PO_No||'—')}</td><td>${esc(c.Transporter||'')}</td>
+    <td>${esc(c.LR_No||'')}</td><td>${esc(c.VehicleNo||'')}</td><td>${esc(c.Packages||'')}</td>
+    <td class="mono">${c.FreightAmount?money(c.FreightAmount):'—'}</td>
+    <td>${esc(c.FreightPaidBy||'—')}</td>
+    <td>${freightBadge(c.FreightStatus)}</td>
+    <td>
+      ${(c.FreightPaidBy==='Litpax'&&c.FreightStatus!=='Paid')?`<button class="btn btn-light btn-sm" onclick="markFreightPaid('${esc(c.ConsignmentID)}')">Mark Paid</button>`:''}
+      <button class="link-btn" onclick="openConsignment('${esc(c.ConsignmentID)}')">Edit</button>
+      <button class="link-btn" onclick="deleteConsignmentUI('${esc(c.ConsignmentID)}')">Delete</button>
+    </td></tr>`).join('');
+}
+function openConsignment(id){
+  const c = id ? (State.transport||[]).find(x=>x.ConsignmentID==id) : null;
+  const transporters=State.config.lists.Transporters||[];
+  const openOrders=[...State.orders].sort((a,b)=>String(b.PO_No).localeCompare(String(a.PO_No)));
+  const tOpt=(sel)=>transporters.map(t=>`<option ${t===sel?'selected':''}>${esc(t)}</option>`).join('');
+  openModal(c?'Edit Consignment':'Add Consignment', `
+    <div class="form-grid">
+      <div class="field"><label>PO No</label>
+        <select id="cgPO"><option value="">— (optional)</option>
+          ${openOrders.map(o=>`<option value="${esc(o.PO_No)}" ${c&&c.PO_No==o.PO_No?'selected':''}>${esc(o.PO_No)} · ${esc(vendorName(o.VendorID))}</option>`).join('')}
+        </select></div>
+      <div class="field"><label>Date</label><input type="date" id="cgDate" value="${c?esc(c.Date):todayStr()}"></div>
+      <div class="field"><label>Transporter <span class="req">*</span></label>
+        <select id="cgTransporter"><option value="">Select</option>${tOpt(c?c.Transporter:'')}</select></div>
+      <div class="field"><label>LR / Docket No</label><input id="cgLR" value="${c?esc(c.LR_No):''}"></div>
+      <div class="field"><label>Vehicle No</label><input id="cgVehicle" value="${c?esc(c.VehicleNo):''}"></div>
+      <div class="field"><label>Packages</label><input type="number" min="0" id="cgPkgs" value="${c?esc(c.Packages):''}"></div>
+      <div class="field"><label>Weight (kg)</label><input type="number" min="0" step="any" id="cgWeight" value="${c?esc(c.Weight):''}"></div>
+      <div class="field"><label>Freight Amount</label><input type="number" min="0" step="any" id="cgFreight" value="${c?esc(c.FreightAmount):''}"></div>
+      <div class="field"><label>Freight Paid By</label>
+        <select id="cgPaidBy">
+          <option value="">—</option>
+          <option ${c&&c.FreightPaidBy==='Litpax'?'selected':''}>Litpax</option>
+          <option ${c&&c.FreightPaidBy==='Vendor'?'selected':''}>Vendor</option>
+        </select></div>
+      <div class="field"><label>Freight Status</label>
+        <select id="cgStatus" onchange="cgStatusChanged()">
+          <option ${c&&c.FreightStatus==='Pending'?'selected':''}>Pending</option>
+          <option ${c&&c.FreightStatus==='Paid'?'selected':''}>Paid</option>
+        </select></div>
+      <div class="field" id="cgPaidDateWrap" style="${c&&c.FreightStatus==='Paid'?'':'display:none'}">
+        <label>Paid Date</label><input type="date" id="cgPaidDate" value="${c&&c.PaidDate?esc(c.PaidDate):todayStr()}"></div>
+      <div class="field full"><label>Remarks</label><input id="cgRemarks" value="${c?esc(c.Remarks):''}"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-light" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="cgSave" onclick="saveConsignment(${c?`'${esc(c.ConsignmentID)}'`:''})">${c?'Save Changes':'Add Consignment'}</button>
+    </div>`);
+}
+function cgStatusChanged(){ $('#cgPaidDateWrap').style.display = $('#cgStatus').value==='Paid' ? '' : 'none'; }
+async function saveConsignment(id){
+  const transporter=$('#cgTransporter').value;
+  if(!transporter) return toast('Select a transporter','error');
+  const status=$('#cgStatus').value;
+  const fields={
+    Date:$('#cgDate').value, PO_No:$('#cgPO').value, Transporter:transporter,
+    LR_No:$('#cgLR').value, VehicleNo:$('#cgVehicle').value, Packages:$('#cgPkgs').value,
+    Weight:$('#cgWeight').value, FreightAmount:$('#cgFreight').value, FreightPaidBy:$('#cgPaidBy').value,
+    FreightStatus:status, PaidDate: status==='Paid' ? $('#cgPaidDate').value : '', Remarks:$('#cgRemarks').value
+  };
+  const btn=$('#cgSave'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
+  try{
+    if(id){ fields.ConsignmentID=id; fields.action='updateConsignment'; await api(fields); toast('Consignment updated','success'); }
+    else { fields.action='addConsignment'; await api(fields); toast('Consignment added','success'); }
+    closeModal(); await loadAll(); render();
+  }catch(e){ toast(e.message,'error'); btn.disabled=false; btn.textContent=id?'Save Changes':'Add Consignment'; }
+}
+async function markFreightPaid(id){
+  try{ await api({action:'updateConsignment',ConsignmentID:id,FreightStatus:'Paid',PaidDate:todayStr()});
+    toast('Freight marked paid','success'); await loadAll(); render(); }
+  catch(e){ toast(e.message,'error'); }
+}
+async function deleteConsignmentUI(id){
+  if(!confirm('Delete consignment '+id+'?')) return;
+  try{ await api({action:'deleteConsignment',ConsignmentID:id}); toast('Deleted','success'); await loadAll(); render(); }
   catch(e){ toast(e.message,'error'); }
 }
 
