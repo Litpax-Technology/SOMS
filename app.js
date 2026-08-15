@@ -293,6 +293,7 @@ function toggleDetail(row,po){
   $$('.detail-row').forEach(r=>r.remove()); $$('#orderTbody tr').forEach(r=>r.classList.remove('open'));
   row.classList.add('open');
   const items=orderItemsOf(po), recs=receivingOf(po), fups=State.followups.filter(f=>f.PO_No==po);
+  const cons=(State.transport||[]).filter(t=>t.PO_No==po);
   const tr=document.createElement('tr'); tr.className='detail-row';
   tr.innerHTML=`<td class="detail-cell" colspan="9"><div class="detail-inner">
     <h4>Items</h4>
@@ -306,6 +307,17 @@ function toggleDetail(row,po){
       ${recs.map(r=>`<tr><td>${esc(r.GRN_No)}</td><td>${esc(r.Material)}</td><td>Recv ${esc(r.ReceivedQty)}</td>
       <td>Acc ${esc(r.AcceptedQty)} / Rej ${esc(r.RejectedQty)}</td><td>${esc(r.ReceivedDate)}</td></tr>`).join('')}
     </tbody></table>`:''}
+    <h4>Transport</h4>
+    ${cons.length?`<table class="mini-table"><tbody>
+      ${cons.map(t=>`<tr>
+        <td class="row-strong">${esc(t.ConsignmentID)}</td>
+        <td>${esc(t.Transporter||'')}${t.LR_No?` · LR ${esc(t.LR_No)}`:''}</td>
+        <td>${transitBadge(t.TransitStatus)}</td>
+        <td>${t.CurrentLocation?esc(t.CurrentLocation):''}${t.ETA?` · ETA ${esc(t.ETA)}`:''}</td>
+        <td>${t.FreightAmount?money(t.FreightAmount):'—'}${t.FreightStatus?` · ${esc(t.FreightStatus)}`:''}</td>
+        <td><button class="link-btn" onclick="openTracking('${esc(t.ConsignmentID)}')">Track</button></td>
+      </tr>`).join('')}
+    </tbody></table>`:'<div style="color:var(--muted);font-size:12.5px;padding:2px 0 6px">No transport added for this order yet.</div>'}
     ${fups.length?`<h4>Follow-ups</h4><table class="mini-table"><tbody>
       ${fups.map(f=>`<tr><td>${esc(f.Date)}</td><td>${esc(f.Type)}</td><td>${esc(f.SpokenWith||'')}</td>
       <td>${esc(f.Outcome||'')}</td><td>Next: ${esc(f.NextFollowUpDate||'—')}</td></tr>`).join('')}
@@ -314,6 +326,7 @@ function toggleDetail(row,po){
       ${(State.orders.find(o=>o.PO_No==po).Status!=='Closed'&&State.orders.find(o=>o.PO_No==po).Status!=='Cancelled')?`
         <button class="btn btn-light btn-sm" onclick="openReceiving('${esc(po)}')">+ Receive</button>
         <button class="btn btn-light btn-sm" onclick="openFollowUp('${esc(po)}')">+ Follow-up</button>
+        <button class="btn btn-light btn-sm" onclick="openConsignment('','${esc(po)}')">+ Transport</button>
         <button class="btn btn-light btn-sm" onclick="changeStatus('${esc(po)}','Closed')">Close</button>
         <button class="btn btn-danger btn-sm" onclick="changeStatus('${esc(po)}','Cancelled')">Cancel</button>`:''}
     </div>
@@ -996,7 +1009,7 @@ async function saveTracking(id){
     await loadAll(); openTracking(id); render();
   }catch(e){ toast(e.message,'error'); btn.disabled=false; btn.textContent='Save Update'; }
 }
-function openConsignment(id){
+function openConsignment(id, prefillPO){
   const c = id ? (State.transport||[]).find(x=>x.ConsignmentID==id) : null;
   const transporters=State.config.lists.Transporters||[];
   const openOrders=[...State.orders].sort((a,b)=>String(b.PO_No).localeCompare(String(a.PO_No)));
@@ -1005,7 +1018,7 @@ function openConsignment(id){
     <div class="form-grid">
       <div class="field"><label>PO No</label>
         <select id="cgPO"><option value="">— (optional)</option>
-          ${openOrders.map(o=>`<option value="${esc(o.PO_No)}" ${c&&c.PO_No==o.PO_No?'selected':''}>${esc(o.PO_No)} · ${esc(vendorName(o.VendorID))}</option>`).join('')}
+          ${openOrders.map(o=>`<option value="${esc(o.PO_No)}" ${(c&&c.PO_No==o.PO_No)||(!c&&prefillPO===o.PO_No)?'selected':''}>${esc(o.PO_No)} · ${esc(vendorName(o.VendorID))}</option>`).join('')}
         </select></div>
       <div class="field"><label>Date</label><input type="date" id="cgDate" value="${c?esc(c.Date):todayStr()}"></div>
       <div class="field"><label>Transporter <span class="req">*</span></label>
