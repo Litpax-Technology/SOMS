@@ -4,6 +4,7 @@
 
 const State = {
   user: null,
+  token: null,
   config: { lists:{}, settings:{} },
   vendors: [], vendorMaterials: [], items: [], orders: [], orderItems: [], receiving: [], followups: [], transport: [], transportFollowups: [],
   view: 'dashboard'
@@ -20,6 +21,7 @@ function api(params){
     const timer = setTimeout(()=>{ cleanup(); reject(new Error('Request timed out')); }, CONFIG.REQUEST_TIMEOUT || 30000);
     function cleanup(){ clearTimeout(timer); delete window[cb]; if(script.parentNode) script.parentNode.removeChild(script); }
     window[cb] = (res)=>{ cleanup(); (res && res.ok) ? resolve(res.data) : reject(new Error((res && res.error) || 'Unknown error')); };
+    if(State.token && !params.token) params.token = State.token;
     const qs = Object.keys(params).map(k=>encodeURIComponent(k)+'='+encodeURIComponent(params[k])).join('&');
     script.src = CONFIG.API_URL + '?' + qs + '&callback=' + cb;
     script.onerror = ()=>{ cleanup(); reject(new Error('Network error — check deployment access = Anyone')); };
@@ -109,6 +111,7 @@ async function doLogin(){
   try{
     const u = await api({ action:'login', pin });
     State.user = u;
+    State.token = u.token;
     $('#loginScreen').classList.add('hidden');
     $('#app').classList.remove('hidden');
     $('#userName').textContent = u.Name;
