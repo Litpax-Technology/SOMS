@@ -283,6 +283,7 @@ function renderOrderTable(){
       <td>${progBar(p)}</td>
       <td>${statusBadge(o.Status)}</td>
       <td onclick="event.stopPropagation()">
+        <button class="link-btn" onclick="openPODetail('${esc(o.PO_No)}')">Details</button>
         ${(o.Status==='Ordered'||o.Status==='Partially Received')?`<button class="btn btn-light btn-sm" onclick="openReceiving('${esc(o.PO_No)}')">Receive</button>`:''}
       </td></tr>`;
   }).join('');
@@ -568,6 +569,46 @@ async function changeStatus(po,status){
   if(status==='Cancelled' && !confirm('Cancel order '+po+'?')) return;
   try{ await api({action:'setStatus',PO_No:po,Status:status}); toast('Order '+status.toLowerCase(),'success'); await loadAll(); render(); }
   catch(e){ toast(e.message,'error'); }
+}
+
+/* ----- Full 360° PO detail (items + receiving + transport + follow-ups) ----- */
+function openPODetail(po){
+  const o=State.orders.find(x=>x.PO_No==po); if(!o){ toast('PO not found','error'); return; }
+  const items=orderItemsOf(po), recs=receivingOf(po), fups=State.followups.filter(f=>f.PO_No==po);
+  const cons=(State.transport||[]).filter(t=>t.PO_No==po);
+  const p=orderProgress(po);
+  const consHtml = cons.length ? cons.map(t=>{
+    const tk=tfOf(t.ConsignmentID);
+    return `<div class="po-cons">
+      <div class="po-cons-head"><b>${esc(t.ConsignmentID)}</b> · ${esc(t.Transporter||'')} ${t.LR_No?`· LR ${esc(t.LR_No)}`:''} ${transitBadge(t.TransitStatus)}</div>
+      <div class="po-cons-sub">${t.CurrentLocation?`📍 ${esc(t.CurrentLocation)} `:''}${t.ETA?`· ETA ${esc(t.ETA)} `:''}${t.FreightAmount?`· Freight ${money(t.FreightAmount)} (${esc(t.FreightStatus||'')})`:''}</div>
+      ${tk.length?`<div class="po-cons-track">${tk.map(f=>`<div>${esc(f.Date)} — ${f.Location?esc(f.Location)+' ':''}${f.ETA?'· ETA '+esc(f.ETA)+' ':''}${f.Outcome?'· '+esc(f.Outcome):''}</div>`).join('')}</div>`:''}
+    </div>`;
+  }).join('') : '<div class="po-empty">No transport for this order yet.</div>';
+  openModal('PO '+po, `
+    <div class="po-head">
+      <div class="info-line"><span>Vendor</span><span>${esc(vendorName(o.VendorID))}</span></div>
+      <div class="info-line"><span>Status</span><span>${statusBadge(o.Status)}</span></div>
+      <div class="info-line"><span>Order Date</span><span>${esc(o.Date)}</span></div>
+      <div class="info-line"><span>Expected</span><span>${esc(o.RevisedExpectedDate||o.OriginalExpectedDate||'—')}</span></div>
+      <div class="info-line"><span>Total</span><span>${money(o.TotalAmount)}</span></div>
+      <div class="info-line"><span>Received</span><span>${p.received}/${p.ordered}</span></div>
+      ${o.Remarks?`<div class="info-line"><span>Remarks</span><span>${esc(o.Remarks)}</span></div>`:''}
+    </div>
+    <h4 class="mini-head" style="margin:16px 0 8px">Items</h4>
+    <table class="mini-table"><tbody>
+      ${items.map(i=>{const rec=receivedQtyMaterial(po,i.Material);const pend=(Number(i.OrderedQty)||0)-rec;
+        return `<tr><td>${esc(i.Material)}</td><td>${esc(i.OrderedQty)} ${esc(i.Unit||'')}</td><td>Recv ${rec}</td><td>Pend <b style="color:${pend>0?'var(--amber)':'var(--green)'}">${pend}</b></td><td class="mono">${money(i.Amount)}</td></tr>`;}).join('')}
+    </tbody></table>
+    ${recs.length?`<h4 class="mini-head" style="margin:16px 0 8px">Receiving</h4><table class="mini-table"><tbody>
+      ${recs.map(r=>`<tr><td>${esc(r.GRN_No)}</td><td>${esc(r.Material)}</td><td>Recv ${esc(r.ReceivedQty)}</td><td>Acc ${esc(r.AcceptedQty)}/Rej ${esc(r.RejectedQty)}</td><td>${esc(r.ReceivedDate)}</td></tr>`).join('')}
+    </tbody></table>`:''}
+    <h4 class="mini-head" style="margin:16px 0 8px">Transport</h4>
+    ${consHtml}
+    ${fups.length?`<h4 class="mini-head" style="margin:16px 0 8px">Follow-ups</h4><table class="mini-table"><tbody>
+      ${fups.map(f=>`<tr><td>${esc(f.Date)}</td><td>${esc(f.Type)}</td><td>${esc(f.Outcome||'')}</td><td>Next ${esc(f.NextFollowUpDate||'—')}</td></tr>`).join('')}
+    </tbody></table>`:''}
+    <div class="modal-actions"><button class="btn btn-primary" onclick="closeModal()">Close</button></div>`);
 }
 
 /* =========================================================
@@ -1176,7 +1217,6 @@ function init(){
   $('#logoutBtn').addEventListener('click', ()=>location.reload());
   $('#refreshBtn').addEventListener('click', refresh);
   $('#modalClose').addEventListener('click', closeModal);
-  $('#modalBackdrop').addEventListener('click', e=>{ if(e.target===$('#modalBackdrop')) closeModal(); });
   $('#hamburger').addEventListener('click', openSidebar);
   $('#sidebarOverlay').addEventListener('click', closeSidebar);
   $$('.nav-item').forEach(n=>n.addEventListener('click', ()=>switchView(n.dataset.view)));
