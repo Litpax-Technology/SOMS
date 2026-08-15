@@ -926,7 +926,8 @@ function openConsignment(id){
         </select></div>
       <div class="field"><label>Date</label><input type="date" id="cgDate" value="${c?esc(c.Date):todayStr()}"></div>
       <div class="field"><label>Transporter <span class="req">*</span></label>
-        <select id="cgTransporter"><option value="">Select</option>${tOpt(c?c.Transporter:'')}</select></div>
+        <select id="cgTransporter"><option value="">Select</option>${tOpt(c?c.Transporter:'')}</select>
+        <button type="button" class="link-btn add-inline-btn" onclick="showAddTransporter(this)">+ New transporter</button></div>
       <div class="field"><label>LR / Docket No</label><input id="cgLR" value="${c?esc(c.LR_No):''}"></div>
       <div class="field"><label>Vehicle No</label><input id="cgVehicle" value="${c?esc(c.VehicleNo):''}"></div>
       <div class="field"><label>Packages</label><input type="number" min="0" id="cgPkgs" value="${c?esc(c.Packages):''}"></div>
@@ -953,6 +954,30 @@ function openConsignment(id){
     </div>`);
 }
 function cgStatusChanged(){ $('#cgPaidDateWrap').style.display = $('#cgStatus').value==='Paid' ? '' : 'none'; }
+function showAddTransporter(btn){
+  const wrap=btn.parentNode;
+  if(wrap.querySelector('.inline-add')) { wrap.querySelector('.inline-add input').focus(); return; }
+  const div=document.createElement('div');
+  div.className='inline-add';
+  div.innerHTML=`<input placeholder="New transporter name" onkeydown="if(event.key==='Enter'){event.preventDefault();addTransporterInline(this.nextElementSibling);}">
+    <button type="button" class="btn btn-light btn-sm" onclick="addTransporterInline(this)">Add</button>`;
+  wrap.appendChild(div);
+  div.querySelector('input').focus();
+}
+async function addTransporterInline(btn){
+  const inp=btn.parentNode.querySelector('input');
+  const name=inp.value.trim(); if(!name) return;
+  btn.disabled=true;
+  try{
+    await api({action:'addConfigItem',list:'Transporters',value:name});
+    (State.config.lists.Transporters=State.config.lists.Transporters||[]).push(name);
+    const sel=$('#cgTransporter');
+    if(![...sel.options].some(o=>o.value===name)) sel.add(new Option(name,name));
+    sel.value=name;
+    btn.parentNode.remove();
+    toast('Transporter added','success');
+  }catch(e){ toast(e.message,'error'); btn.disabled=false; }
+}
 async function saveConsignment(id){
   const transporter=$('#cgTransporter').value;
   if(!transporter) return toast('Select a transporter','error');
