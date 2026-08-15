@@ -328,6 +328,15 @@ tbody tr:last-child td{border-bottom:none}
 
 .map-list{margin-bottom:16px;display:flex;flex-direction:column;gap:8px}
 
+/* transport tracking timeline */
+.track-summary{display:flex;flex-wrap:wrap;gap:16px;padding:12px 14px;background:#f7f9fc;border:1px solid var(--border);border-radius:12px;margin-bottom:16px;font-size:13px}
+.track-timeline{display:flex;flex-direction:column;gap:2px;margin-bottom:6px}
+.track-item{display:flex;gap:12px;padding:4px 0}
+.track-dot{width:10px;height:10px;border-radius:50%;background:var(--accent);margin-top:5px;flex-shrink:0;box-shadow:0 0 0 3px var(--accent-soft);position:relative}
+.track-item:not(:last-child) .track-dot::after{content:"";position:absolute;left:50%;top:12px;transform:translateX(-50%);width:2px;height:calc(100% + 10px);background:var(--border)}
+.track-body{font-size:13px;line-height:1.5}
+.track-line{margin-bottom:2px}
+
 /* inline quick-add (e.g. new transporter in modal) */
 .add-inline-btn{align-self:flex-start;padding:4px 0;font-size:12.5px;margin-top:4px}
 .inline-add{display:flex;gap:8px;margin-top:8px;animation:slideDown .2s ease}
