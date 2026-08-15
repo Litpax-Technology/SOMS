@@ -329,6 +329,12 @@ tbody tr:last-child td{border-bottom:none}
 .map-list{margin-bottom:16px;display:flex;flex-direction:column;gap:8px}
 
 /* transport tracking timeline */
+.po-head{background:#f7f9fc;border:1px solid var(--border);border-radius:12px;padding:4px 14px;margin-bottom:6px}
+.po-cons{border:1px solid var(--border);border-radius:10px;padding:10px 12px;margin-bottom:8px;font-size:13px;background:#fff}
+.po-cons-head{margin-bottom:3px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.po-cons-sub{color:var(--muted);font-size:12.5px}
+.po-cons-track{margin-top:6px;font-size:12px;color:var(--muted);border-top:1px dashed var(--border);padding-top:6px;line-height:1.6}
+.po-empty{color:var(--muted);font-size:12.5px;padding:2px 0 6px}
 .track-summary{display:flex;flex-wrap:wrap;gap:16px;padding:12px 14px;background:#f7f9fc;border:1px solid var(--border);border-radius:12px;margin-bottom:16px;font-size:13px}
 .track-timeline{display:flex;flex-direction:column;gap:2px;margin-bottom:6px}
 .track-item{display:flex;gap:12px;padding:4px 0}
