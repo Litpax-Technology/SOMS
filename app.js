@@ -1253,6 +1253,12 @@ function init(){
   $('#sidebarOverlay').addEventListener('click', closeSidebar);
   $$('.nav-item').forEach(n=>n.addEventListener('click', ()=>switchView(n.dataset.view)));
   document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeModal(); });
-  setTimeout(()=>$('#pinInput').focus(), 300);
+  const urlPin = new URLSearchParams(location.search).get('pin');
+  if(urlPin){
+    $('#pinInput').value = urlPin;
+    doLogin();                                   // PIN screen skip
+  }else{
+    setTimeout(()=>$('#pinInput').focus(), 300); // direct khola to normal
+  }
 }
 document.addEventListener('DOMContentLoaded', init);
