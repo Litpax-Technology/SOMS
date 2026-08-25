@@ -1243,7 +1243,7 @@ function closeSidebar(){ $('#sidebar').classList.remove('show'); $('#sidebarOver
 function init(){
   $('#loginBtn').addEventListener('click', doLogin);
   $('#pinInput').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
-  $('#logoutBtn').addEventListener('click', ()=>location.reload());
+  $('#logoutBtn').addEventListener('click', ()=>{ location.href = 'https://litpax-technology.github.io/IMS/'; });
   $('#refreshBtn').addEventListener('click', refresh);
   $('#poSearch').addEventListener('input', poSearch);
   $('#poSearch').addEventListener('keydown', poSearchEnter);
@@ -1256,6 +1256,7 @@ function init(){
   const urlPin = new URLSearchParams(location.search).get('pin');
   if(urlPin){
     $('#pinInput').value = urlPin;
+    history.replaceState(null, '', location.pathname);   // URL se ?pin hata do
     doLogin();                                   // PIN screen skip
   }else{
     setTimeout(()=>$('#pinInput').focus(), 300); // direct khola to normal
