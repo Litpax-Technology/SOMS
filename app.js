@@ -7,6 +7,7 @@ const State = {
   token: null,
   config: { lists:{}, settings:{} },
   vendors: [], vendorMaterials: [], items: [], orders: [], orderItems: [], receiving: [], followups: [], transport: [], transportFollowups: [],
+  imsPOs: [],
   view: 'dashboard'
 };
 
@@ -139,6 +140,7 @@ async function loadAll(){
   State.followups = d.followups||[];
   State.transport = d.transport||[];
   State.transportFollowups = d.transportFollowups||[];
+  State.imsPOs = await api({ action:'getIMSPendingPOs' });
 }
 async function refresh(){
   const r = $('#refreshBtn'); r.classList.add('spinning');
@@ -150,10 +152,10 @@ async function refresh(){
 /* =========================================================
  *  ROUTER
  * ========================================================= */
-const TITLES = {dashboard:'Dashboard',orders:'Orders',receiving:'Receiving',followups:'Follow-ups',vendors:'Vendors',masters:'Masters',transport:'Consignments',tracking:'Tracking',freight:'Freight'};
+const TITLES = {dashboard:'Dashboard',orders:'Orders',receiving:'Receiving',followups:'Follow-ups',vendors:'Vendors',masters:'Masters',imspo:'From IMS',transport:'Consignments',tracking:'Tracking',freight:'Freight'};
 const ROLE_VIEWS = {
-  Admin:     ['dashboard','orders','receiving','followups','vendors','masters','transport','tracking','freight'],
-  Purchase:  ['dashboard','orders','receiving','followups','vendors','masters'],
+  Admin:     ['dashboard','orders','receiving','followups','vendors','masters','imspo','transport','tracking','freight'],
+  Purchase:  ['dashboard','orders','receiving','followups','vendors','masters','imspo'],
   Transport: ['transport','tracking','freight']
 };
 function allowedViews(){ const r=State.user&&State.user.Role; return ROLE_VIEWS[r] || ROLE_VIEWS.Admin; }
@@ -186,7 +188,7 @@ function switchView(v){
 function render(){
   const root = $('#viewRoot');
   root.style.animation='none'; void root.offsetWidth; root.style.animation='fadeIn .35s ease';
-  ({dashboard:renderDashboard,orders:renderOrders,receiving:renderReceiving,followups:renderFollowups,vendors:renderVendors,masters:renderMasters,transport:renderTransport,tracking:renderTracking,freight:renderFreight}[State.view])();
+  ({dashboard:renderDashboard,orders:renderOrders,receiving:renderReceiving,followups:renderFollowups,vendors:renderVendors,masters:renderMasters,imspo:renderIMSPOs,transport:renderTransport,tracking:renderTracking,freight:renderFreight}[State.view])();
 }
 
 /* =========================================================
@@ -925,6 +927,31 @@ async function deleteMaster(list, btn){
   if(!confirm('Delete "'+value+'"?')) return;
   try{ await api({action:'deleteConfigItem',list,value}); toast('Deleted','success'); await loadAll(); renderMasters(); }
   catch(e){ toast(e.message,'error'); }
+}
+
+/* =========================================================
+ *  FROM IMS  (pending POs raised in IMS — read only)
+ * ========================================================= */
+function renderIMSPOs(){
+  const list = State.imsPOs || [];
+  $('#viewRoot').innerHTML = `
+    <div class="panel"><div class="panel-head">
+      <h3>IMS Pending POs</h3>
+      <span class="stat-hint">${list.length} PO${list.length===1?'':'s'}</span>
+    </div>
+    <div class="panel-body flush">${list.length ? list.map(po=>`
+      <div style="border-bottom:1px solid var(--border);padding:12px 16px">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
+          <div class="row-strong">${esc(po.POID)}
+            <span class="badge ${po.Status==='Partial'?'b-amber':'b-blue'}" style="margin-left:6px">${esc(po.Status)}</span>
+          </div>
+          <div style="font-size:12px;color:var(--muted)">${esc(po.Date||'')}${po.Supplier?' · '+esc(po.Supplier):''}</div>
+        </div>
+        <table class="mini-table" style="margin-top:8px"><tbody>
+          ${po.items.map(i=>`<tr><td>${esc(i.Material)}</td><td>${esc(i.Qty)} ${esc(i.Unit||'')}</td></tr>`).join('')}
+        </tbody></table>
+      </div>`).join('') : emptyState('No pending POs from IMS','')}
+    </div></div>`;
 }
 
 /* =========================================================
