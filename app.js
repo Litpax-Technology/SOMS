@@ -140,7 +140,8 @@ async function loadAll(){
   State.followups = d.followups||[];
   State.transport = d.transport||[];
   State.transportFollowups = d.transportFollowups||[];
-  State.imsPOs = await api({ action:'getIMSPendingPOs' });
+  try { State.imsPOs = await api({ action:'getIMSPendingPOs' }); }
+  catch(e){ State.imsPOs = []; }
 }
 async function refresh(){
   const r = $('#refreshBtn'); r.classList.add('spinning');
