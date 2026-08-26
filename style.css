@@ -420,6 +420,14 @@ tbody tr:last-child td{border-bottom:none}
 .expand-ic{transition:transform .25s;display:inline-block}
 tr.open .expand-ic{transform:rotate(90deg)}
 
+/* Order Sticker button in topbar */
+.btn-sticker {
+  text-decoration: none;
+  white-space: nowrap;
+  font-size: 12px;
+  padding: 8px 14px;
+}
+
 /* ================= RESPONSIVE ================= */
 @media (max-width:860px){
   .sidebar{transform:translateX(-100%);transition:transform .28s cubic-bezier(.2,.8,.2,1);box-shadow:var(--shadow-lg)}
