@@ -170,6 +170,7 @@ function applyRoleNav(){
   const allow=allowedViews();
   $$('.nav-item').forEach(n=> n.style.display = allow.includes(n.dataset.view)?'':'none');
   const wrap=$('#poSearchWrap'); if(wrap) wrap.style.display = allow.includes('orders') ? '' : 'none';
+  const sb=$('#stickerBtn'); if(sb) sb.style.display = allow.includes('orders') ? '' : 'none';
 }
 function poSearch(){
   const q=($('#poSearch').value||'').toLowerCase().trim();
