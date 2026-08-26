@@ -121,6 +121,7 @@ async function doLogin(){
     await loadAll();
     applyRoleNav();
     switchView(allowedViews()[0] || 'dashboard');
+    loadIMSPOsBackground();
   }catch(e){
     err.textContent = e.message;
   }finally{
@@ -140,12 +141,17 @@ async function loadAll(){
   State.followups = d.followups||[];
   State.transport = d.transport||[];
   State.transportFollowups = d.transportFollowups||[];
-  try { State.imsPOs = await api({ action:'getIMSPendingPOs' }); }
-  catch(e){ State.imsPOs = []; }
+}
+
+// IMS POs background mein — login ka wait nahi
+function loadIMSPOsBackground(){
+  api({ action:'getIMSPendingPOs' })
+    .then(d => { State.imsPOs = d || []; if(State.view==='imspo') render(); })
+    .catch(() => { State.imsPOs = []; });
 }
 async function refresh(){
   const r = $('#refreshBtn'); r.classList.add('spinning');
-  try{ await loadAll(); render(); }
+  try{ await loadAll(); render(); loadIMSPOsBackground(); }
   catch(e){ toast(e.message,'error'); }
   finally{ setTimeout(()=>r.classList.remove('spinning'),600); }
 }
