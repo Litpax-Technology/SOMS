@@ -359,6 +359,7 @@ function toggleDetail(row,po){
     </tbody></table>`:''}
     <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
       ${(State.orders.find(o=>o.PO_No==po).Status!=='Closed'&&State.orders.find(o=>o.PO_No==po).Status!=='Cancelled')?`
+        <button class="btn btn-light btn-sm" onclick="openEditOrder('${esc(po)}')">✎ Edit</button>
         <button class="btn btn-light btn-sm" onclick="openReceiving('${esc(po)}')">+ Receive</button>
         <button class="btn btn-light btn-sm" onclick="openFollowUp('${esc(po)}')">+ Follow-up</button>
         <button class="btn btn-light btn-sm" onclick="openConsignment('','${esc(po)}')">+ Transport</button>
@@ -520,6 +521,74 @@ async function saveOrder(){
     toast('Order '+res.PO_No+' created','success');
     closeModal(); await loadAll(); render();
   }catch(e){ toast(e.message,'error'); btn.disabled=false; btn.textContent='Create Order'; }
+}
+
+/* ----- Edit Order (full) ----- */
+let editPO=null;
+function openEditOrder(po){
+  const o=State.orders.find(x=>x.PO_No==po); if(!o){ toast('PO not found','error'); return; }
+  if(o.Status==='Closed'||o.Status==='Cancelled'){ toast('Closed/Cancelled PO edit nahi ho sakta','error'); return; }
+  editPO=po;
+  selectedVendorId=o.VendorID;
+  const exp=o.RevisedExpectedDate||o.OriginalExpectedDate||'';
+  openModal('Edit PO — '+po, `
+    <h4 class="mini-head">1 · Items</h4>
+    <div id="itemRows"></div>
+    <button class="btn btn-light btn-sm" onclick="addItemRow()">+ Add Item</button>
+    <div class="order-total">Total: <span id="noTotal" class="mono">₹0</span></div>
+
+    <h4 class="mini-head" style="margin-top:20px">2 · Select Vendor</h4>
+    <div id="vendorPicker" class="vendor-picker"></div>
+
+    <h4 class="mini-head" style="margin-top:20px">3 · Details</h4>
+    <div class="form-grid">
+      <div class="field"><label>Order Date</label><input type="date" id="noDate" value="${esc(o.Date||todayStr())}"></div>
+      <div class="field"><label>Expected Receiving Date</label><input type="date" id="noExp" value="${esc(exp)}"></div>
+      <div class="field"><label>Priority</label>
+        <select id="noPriority">${['Normal','High','Urgent'].map(x=>`<option ${o.Priority===x?'selected':''}>${x}</option>`).join('')}</select></div>
+      <div class="field"><label>Lead Time (days)</label>
+        <input type="number" min="0" id="noLeadTime" value="0" placeholder="0"></div>
+      <div class="field"><label>Remarks</label><input id="noRemarks" value="${esc(o.Remarks||'')}" placeholder="Optional note"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-light" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="noSave" onclick="saveEditOrder()">Save Changes</button>
+    </div>`);
+  // existing items pre-fill
+  itemRows=0; $('#itemRows').innerHTML='';
+  const its=orderItemsOf(po);
+  its.forEach(it=>{
+    addItemRow();
+    const row=$('#itemRows').lastElementChild;
+    row.querySelector('[data-f="material"]').value=it.Material;
+    row.querySelector('[data-f="qty"]').value=it.OrderedQty;
+    const us=row.querySelector('[data-f="unit"]');
+    if(it.Unit){ if(![...us.options].some(x=>x.value===it.Unit)) us.add(new Option(it.Unit,it.Unit)); us.value=it.Unit; }
+    row.querySelector('[data-f="rate"]').value=it.Rate;
+  });
+  if(!its.length) addItemRow();
+  recalcTotal(); updateVendorPicker();
+}
+
+async function saveEditOrder(){
+  const items=collectItems().filter(i=>i.Material);
+  if(!items.length) return toast('Add at least one item','error');
+  if(!selectedVendorId) return toast('Select a vendor','error');
+  for(const it of items){
+    if(!(Number(it.OrderedQty)>0)) return toast('Quantity must be greater than 0 ('+it.Material+')','error');
+    if(String(vendorTagFor(selectedVendorId,it.Material)).toLowerCase()==='blacklisted')
+      return toast('Vendor is blacklisted for '+it.Material,'error');
+  }
+  const date=$('#noDate').value, exp=$('#noExp').value;
+  if(exp && exp<date) return toast('Expected date cannot be before order date','error');
+  const btn=$('#noSave'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
+  try{
+    await api({action:'updateOrder',PO_No:editPO,VendorID:selectedVendorId,Date:date,ExpectedDate:exp,
+      Priority:$('#noPriority').value,Remarks:$('#noRemarks').value,LeadTime:$('#noLeadTime').value,
+      items:JSON.stringify(items)});
+    toast('PO '+editPO+' updated','success');
+    closeModal(); await loadAll(); render();
+  }catch(e){ toast(e.message,'error'); btn.disabled=false; btn.textContent='Save Changes'; }
 }
 
 /* ----- Receiving ----- */
