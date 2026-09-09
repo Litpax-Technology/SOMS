@@ -513,6 +513,7 @@ async function saveOrder(){
   try{
     const res=await api({action:'addOrder',VendorID:selectedVendorId,Date:date,ExpectedDate:exp,
       Priority:$('#noPriority').value,CreatedBy:State.user.Name,Remarks:$('#noRemarks').value,
+      LeadTime:$('#noLeadTime').value,
       items:JSON.stringify(items)});
     toast('Order '+res.PO_No+' created','success');
     closeModal(); await loadAll(); render();
