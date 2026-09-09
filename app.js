@@ -390,6 +390,8 @@ function openNewOrder(){
       <div class="field"><label>Expected Receiving Date</label><input type="date" id="noExp"></div>
       <div class="field"><label>Priority</label>
         <select id="noPriority"><option>Normal</option><option>High</option><option>Urgent</option></select></div>
+      <div class="field"><label>Lead Time (days)</label>
+        <input type="number" min="0" id="noLeadTime" value="0" placeholder="0"></div>
       <div class="field"><label>Remarks</label><input id="noRemarks" placeholder="Optional note"></div>
     </div>
     <div class="modal-actions">
