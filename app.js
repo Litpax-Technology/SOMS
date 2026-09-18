@@ -162,7 +162,7 @@ async function refresh(){
 const TITLES = {dashboard:'Dashboard',orders:'Orders',receiving:'Receiving',followups:'Follow-ups',vendors:'Vendors',masters:'Masters',imspo:'From IMS',transport:'Consignments',tracking:'Tracking',freight:'Freight'};
 const ROLE_VIEWS = {
   Admin:     ['dashboard','orders','receiving','followups','vendors','masters','imspo','transport','tracking','freight'],
-  Purchase:  ['dashboard','orders','receiving','followups','vendors','masters','imspo'],
+  Purchase:  ['dashboard','orders','receiving','followups','vendors','masters','imspo','transport','tracking','freight'],
   Transport: ['transport','tracking','freight']
 };
 function allowedViews(){ const r=State.user&&State.user.Role; return ROLE_VIEWS[r] || ROLE_VIEWS.Admin; }
