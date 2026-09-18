@@ -293,6 +293,19 @@ function renderOrders(){
     </table></div></div></div>`;
   renderOrderTable();
 }
+
+function orderMaterialsSummary(po){
+  const its = orderItemsOf(po);
+  if(!its.length) return '';
+  const MAX = 3;
+  const parts = its.slice(0, MAX).map(i=>{
+    const qty = i.OrderedQty ? ` <span class="mat-qty">${esc(i.OrderedQty)}${i.Unit?' '+esc(i.Unit):''}</span>` : '';
+    return `<span class="mat-chip">${esc(i.Material)}${qty}</span>`;
+  });
+  const more = its.length > MAX ? `<span class="mat-chip mat-more">+${its.length-MAX} more</span>` : '';
+  return `<div class="order-mats">${parts.join('')}${more}</div>`;
+}
+
 function renderOrderTable(){
   const q=($('#oSearch')?.value||'').toLowerCase();
   const fs=$('#oStatus')?.value||''; const fv=$('#oVendor')?.value||'';
@@ -311,7 +324,7 @@ function renderOrderTable(){
       <td><span class="expand-ic">▸</span></td>
       <td class="row-strong">${esc(o.PO_No)}</td>
       <td>${esc(o.Date)}</td>
-      <td>${esc(vendorName(o.VendorID))}</td>
+      <td>${esc(vendorName(o.VendorID))}${orderMaterialsSummary(o.PO_No)}</td>
       <td>${od?`<span class="badge b-red pulse">${esc(exp)}</span>`:esc(exp)}</td>
       <td class="mono">${money(o.TotalAmount)}</td>
       <td>${progBar(p)}</td>
