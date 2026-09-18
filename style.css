@@ -446,3 +446,11 @@ tr.open .expand-ic{transform:rotate(90deg)}
   .stat-value{font-size:26px}
   .item-row{grid-template-columns:1fr}
 }
+
+.order-mats{ display:flex; flex-wrap:wrap; gap:4px 6px; margin-top:5px; }
+.order-mats .mat-chip{
+  font-size:11px; color:var(--muted); border:1px solid var(--border);
+  padding:1px 8px; border-radius:20px; line-height:1.7; white-space:nowrap;
+}
+.order-mats .mat-qty{ font-weight:600; }
+.order-mats .mat-more{ opacity:.75; }
