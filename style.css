@@ -471,5 +471,23 @@ tr.open .expand-ic{transform:rotate(90deg)}
 }
 /* modal thoda chaura taaki 4 column aaram se aayein */
 .modal{ max-width:720px; }
+
+/* ---- Split / import order tables ---- */
+.split-table{ width:100%; }
+.split-table th{ text-align:left; font-size:11px; color:var(--muted); font-weight:600; padding:4px 6px; }
+.split-table td{ padding:6px; vertical-align:middle; }
+.split-table select, .split-table input{
+  padding:6px 8px; border:1px solid var(--border); border-radius:8px; font-size:13px;
+  background:#fff; box-sizing:border-box; max-width:100%;
+}
+.split-table .so-qty,.split-table .imp-qty,.split-table .so-rate,.split-table .imp-rate{ width:70px; }
+.split-table .so-exp,.split-table .imp-exp{ width:140px; }
+.split-table .so-mat,.split-table .so-vendor,.split-table .imp-vendor{ min-width:130px; }
+.split-table .rm{
+  border:none; background:#eef1f6; color:var(--muted); width:26px; height:26px;
+  border-radius:6px; cursor:pointer; font-size:15px; line-height:1;
+}
+.split-table .rm:hover{ background:#e2e6ee; }
+.modal{ max-width:760px; }
 .order-mats .mat-qty{ font-weight:600; }
 .order-mats .mat-more{ opacity:.75; }
