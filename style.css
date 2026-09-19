@@ -452,5 +452,24 @@ tr.open .expand-ic{transform:rotate(90deg)}
   font-size:11px; color:var(--muted); border:1px solid var(--border);
   padding:1px 8px; border-radius:20px; line-height:1.7; white-space:nowrap;
 }
+
+/* ---- IMS Import modal ---- */
+#impRows{ width:100%; border-collapse:separate; border-spacing:0; }
+#impRows td{
+  padding:10px 8px; vertical-align:middle; border-bottom:1px solid var(--border);
+}
+#impRows td:first-child{
+  min-width:130px; max-width:150px; font-weight:600; font-size:13px; line-height:1.3;
+}
+#impRows td:first-child div{ font-weight:400; margin-top:2px; }
+#impRows .imp-vendor{ width:100%; min-width:150px; }
+#impRows .imp-exp{ width:100%; min-width:130px; }
+#impRows .imp-rate{ width:100%; min-width:80px; text-align:right; }
+#impRows select, #impRows input{
+  padding:7px 8px; border:1px solid var(--border); border-radius:8px;
+  font-size:13px; background:#fff; box-sizing:border-box;
+}
+/* modal thoda chaura taaki 4 column aaram se aayein */
+.modal{ max-width:720px; }
 .order-mats .mat-qty{ font-weight:600; }
 .order-mats .mat-more{ opacity:.75; }
