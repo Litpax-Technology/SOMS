@@ -388,32 +388,88 @@ let itemRows=0;
 let selectedVendorId='';
 
 function openNewOrder(){
-  selectedVendorId='';
   openModal('New Purchase Order', `
-    <h4 class="mini-head">1 · Items</h4>
-    <div id="itemRows"></div>
-    <button class="btn btn-light btn-sm" onclick="addItemRow()">+ Add Item</button>
-    <div class="order-total">Total: <span id="noTotal" class="mono">₹0</span></div>
-
-    <h4 class="mini-head" style="margin-top:20px">2 · Select Vendor</h4>
-    <div id="vendorPicker" class="vendor-picker"></div>
-
-    <h4 class="mini-head" style="margin-top:20px">3 · Details</h4>
+    <h4 class="mini-head">Items</h4>
+    <div class="table-wrap"><table class="mini-table split-table" id="soRows">
+      <thead><tr><th>Material</th><th>Qty</th><th>Unit</th><th>Vendor</th><th>Rate</th><th>Expected</th><th></th></tr></thead>
+      <tbody id="soBody"></tbody>
+    </table></div>
+    <button class="btn btn-light btn-sm" onclick="addSplitRow()" style="margin-top:10px">+ Add Item</button>
+    <p class="masters-note">Ek hi item alag-alag vendor ko dena ho to use dobara add karo aur qty baant do. Har vendor ka alag order banega.</p>
+    <div class="order-total">Total: <span id="soTotal" class="mono">₹0</span></div>
+    <h4 class="mini-head" style="margin-top:16px">Details</h4>
     <div class="form-grid">
-      <div class="field"><label>Order Date</label><input type="date" id="noDate" value="${todayStr()}"></div>
-      <div class="field"><label>Expected Receiving Date</label><input type="date" id="noExp"></div>
-      <div class="field"><label>Priority</label>
-        <select id="noPriority"><option>Normal</option><option>High</option><option>Urgent</option></select></div>
-      <div class="field"><label>Lead Time (days)</label>
-        <input type="number" min="0" id="noLeadTime" value="0" placeholder="0"></div>
-      <div class="field"><label>Remarks</label><input id="noRemarks" placeholder="Optional note"></div>
+      <div class="field"><label>Order Date</label><input type="date" id="soDate" value="${todayStr()}"></div>
+      <div class="field"><label>Priority</label><select id="soPriority"><option>Normal</option><option>High</option><option>Urgent</option></select></div>
+      <div class="field"><label>Remarks</label><input id="soRemarks" placeholder="Optional"></div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-light" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" id="noSave" onclick="saveOrder()">Create Order</button>
+      <button class="btn btn-primary" id="soSave" onclick="saveSplitOrder()">Create Order(s)</button>
     </div>`);
-  itemRows=0; $('#itemRows').innerHTML=''; addItemRow(); updateVendorPicker();
+  soRowSeq=0; $('#soBody').innerHTML=''; addSplitRow();
 }
+
+let soRowSeq=0;
+function soVendorOptions(material, selected){
+  const active = State.vendors.filter(v=>v.Status!=='Inactive');
+  let def = selected||'';
+  if(!def){ const pref=active.find(v=>String(vendorTagFor(v.VendorID,material)).toLowerCase()==='preferred'); def=pref?pref.VendorID:''; }
+  return `<option value="">Vendor…</option>` + active.map(v=>{
+    const tag=vendorTagFor(v.VendorID,material);
+    const blk=String(tag).toLowerCase()==='blacklisted';
+    return `<option value="${esc(v.VendorID)}" ${v.VendorID===def?'selected':''} ${blk?'disabled':''}>${esc(v.Name)}${tag?` · ${esc(tag)}`:''}</option>`;
+  }).join('');
+}
+function addSplitRow(material){
+  const tb=$('#soBody');
+  const tr=document.createElement('tr'); tr.className='so-row';
+  tr.innerHTML=`
+    <td><select class="so-mat" onchange="soMatChanged(this)"><option value="">Select</option>${materialOptions()}</select></td>
+    <td><input type="number" min="0" step="any" class="so-qty" oninput="soRecalc()"></td>
+    <td><select class="so-unit"><option value="">—</option>${unitOptions()}</select></td>
+    <td><select class="so-vendor"><option value="">Vendor…</option></select></td>
+    <td><input type="number" min="0" step="any" class="so-rate" oninput="soRecalc()"></td>
+    <td><input type="date" class="so-exp"></td>
+    <td><button class="rm" title="Remove" onclick="this.closest('tr').remove();soRecalc()">✕</button></td>`;
+  tb.appendChild(tr);
+  if(material){ const s=tr.querySelector('.so-mat'); s.value=material; soMatChanged(s); }
+}
+function soMatChanged(sel){
+  const tr=sel.closest('.so-row'), mat=sel.value;
+  const opt=sel.selectedOptions[0], unit=opt?opt.dataset.unit:'';
+  const us=tr.querySelector('.so-unit');
+  if(unit){ if(![...us.options].some(o=>o.value===unit)) us.add(new Option(unit,unit)); us.value=unit; }
+  tr.querySelector('.so-vendor').innerHTML = soVendorOptions(mat,'');
+  soRecalc();
+}
+function soRecalc(){
+  let t=0;
+  $$('#soRows .so-row').forEach(r=>{ t+=(Number(r.querySelector('.so-qty').value)||0)*(Number(r.querySelector('.so-rate').value)||0); });
+  const el=$('#soTotal'); if(el) el.textContent=money(t);
+}
+async function saveSplitOrder(){
+  const items=$$('#soRows .so-row').map(r=>({
+    Material:r.querySelector('.so-mat').value, OrderedQty:r.querySelector('.so-qty').value,
+    Unit:r.querySelector('.so-unit').value, VendorID:r.querySelector('.so-vendor').value,
+    Rate:r.querySelector('.so-rate').value, ExpectedDate:r.querySelector('.so-exp').value
+  })).filter(i=>i.Material);
+  if(!items.length) return toast('Add at least one item','error');
+  for(const it of items){
+    if(!it.VendorID) return toast('Vendor select karo ('+it.Material+')','error');
+    if(!(Number(it.OrderedQty)>0)) return toast('Qty > 0 ('+it.Material+')','error');
+    if(String(vendorTagFor(it.VendorID,it.Material)).toLowerCase()==='blacklisted')
+      return toast('Vendor blacklisted for '+it.Material,'error');
+  }
+  const btn=$('#soSave'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
+  try{
+    const res=await api({action:'addSplitOrder', Date:$('#soDate').value, Priority:$('#soPriority').value,
+      Remarks:$('#soRemarks').value, CreatedBy:State.user.Name, items:JSON.stringify(items)});
+    toast('Order(s) bane: '+(res.created||[]).map(c=>c.PO_No).join(', '),'success');
+    closeModal(); await loadAll(); render();
+  }catch(e){ toast(e.message,'error'); btn.disabled=false; btn.textContent='Create Order(s)'; }
+}
+
 function materialOptions(){
   const items=State.items||[];
   if(!items.length){ return (State.config.lists.MaterialList||[]).map(m=>`<option>${esc(m)}</option>`).join(''); }
@@ -1057,11 +1113,17 @@ function renderIMSPOs(){
           </div>
         </div>
         <table class="mini-table" style="margin-top:8px"><tbody>
-          ${po.items.map(i=>`<tr>
-            <td>${i.Imported?'<span style="color:var(--green)">✓</span> ':''}${esc(i.Material)}</td>
-            <td>${esc(i.Qty)} ${esc(i.Unit||'')}</td>
-            <td style="color:var(--muted);font-size:11px">${i.Imported?'imported':'pending'}</td>
-          </tr>`).join('')}
+          ${po.items.map(i=>{
+            const s=i.ImportState||'none';
+            const tick=s==='full'?'<span style="color:var(--green)">✓</span> ':'';
+            const info=s==='full'?'fully ordered':s==='partial'?`${i.OrderedQty}/${i.Qty} ordered · ${i.PendingQty} pending`:'pending';
+            const col=s==='full'?'var(--green)':s==='partial'?'var(--amber)':'var(--muted)';
+            return `<tr>
+              <td>${tick}${esc(i.Material)}</td>
+              <td>${esc(i.Qty)} ${esc(i.Unit||'')}</td>
+              <td style="color:${col};font-size:11px">${info}</td>
+            </tr>`;
+          }).join('')}
         </tbody></table>
       </div>`;
     }).join('') : emptyState('No pending POs from IMS','')}
@@ -1095,26 +1157,19 @@ function openImportIMS(poid){
   const po = (State.imsPOs||[]).find(x=>x.POID==poid);
   if(!po){ toast('IMS PO not found','error'); return; }
   importPOID = poid;
-  const pending = po.items.filter(i=>!i.Imported);
-  const done = po.items.filter(i=>i.Imported);
+  const pending = po.items.filter(i=>Number(i.PendingQty)>0);
+  const done = po.items.filter(i=>Number(i.PendingQty)<=0 && Number(i.OrderedQty)>0);
   openModal('Import '+poid+' → Order(s)', `
-    ${done.length?`<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Already imported: ${done.map(i=>esc(i.Material)).join(', ')}</div>`:''}
-    <h4 class="mini-head">Items — har item ka vendor + rate</h4>
-    <table class="mini-table" id="impRows">
-      <thead><tr>
-        <th style="text-align:left">Item</th><th style="text-align:left">Vendor</th>
-        <th style="text-align:left">Expected</th><th style="text-align:left">Rate</th>
-      </tr></thead>
-      <tbody>
-      ${pending.map(i=>`<tr class="imp-row" data-mat="${esc(i.Material)}" data-unit="${esc(i.Unit||'')}" data-qty="${esc(i.Qty)}">
-        <td>${esc(i.Material)}<div style="font-size:11px;color:var(--muted)">${esc(i.Qty)} ${esc(i.Unit||'')}</div></td>
-        <td><select class="imp-vendor" onchange="impRecalc()">${impVendorOptions(i.Material)}</select></td>
-        <td><input type="date" class="imp-exp" value="${esc(po.ExpectedDate||'')}" style="width:140px"></td>
-        <td><input type="number" min="0" step="any" class="imp-rate" placeholder="Rate" oninput="impRecalc()" style="width:100px"></td>
-      </tr>`).join('')}
-    </tbody></table>
+    ${done.length?`<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Fully ordered: ${done.map(i=>esc(i.Material)).join(', ')}</div>`:''}
+    <h4 class="mini-head">Items — vendor, qty, rate</h4>
+    <div class="table-wrap"><table class="mini-table split-table" id="impRows">
+      <thead><tr><th>Item</th><th>Vendor</th><th>Qty</th><th>Rate</th><th>Expected</th><th></th></tr></thead>
+      <tbody id="impBody">
+        ${pending.map(i=>impRowHTML(i.Material, i.Unit, i.PendingQty, po.ExpectedDate, true)).join('')}
+      </tbody>
+    </table></div>
     <div class="order-total" style="margin-top:10px">Total: <span id="impTotal" class="mono">₹0</span></div>
-    <p class="masters-note">Jis item ka vendor select nahi karoge wo import nahi hoga (pending rahega). Alag-alag vendor = alag-alag order, har order ki apni Expected Date.</p>
+    <p class="masters-note">Kisi item ka "+" dabao to usi item ka aur vendor add karo (qty baant do). Alag vendor = alag order. Bachi qty pending rahegi.</p>
     <div class="form-grid" style="margin-top:12px">
       <div class="field"><label>Order Date</label><input type="date" id="impDate" value="${todayStr()}"></div>
     </div>
@@ -1124,21 +1179,46 @@ function openImportIMS(poid){
     </div>`);
   impRecalc();
 }
+function impRowHTML(mat, unit, qty, exp, first){
+  return `<tr class="imp-row" data-mat="${esc(mat)}" data-unit="${esc(unit||'')}">
+    <td>${esc(mat)}<div style="font-size:11px;color:var(--muted)">${first?'pending '+esc(qty):'split'} ${esc(unit||'')}</div></td>
+    <td><select class="imp-vendor" onchange="impRecalc()">${impVendorOptions(mat)}</select></td>
+    <td><input type="number" min="0" step="any" class="imp-qty" value="${esc(qty)}" oninput="impRecalc()"></td>
+    <td><input type="number" min="0" step="any" class="imp-rate" placeholder="Rate" oninput="impRecalc()"></td>
+    <td><input type="date" class="imp-exp" value="${esc(exp||'')}"></td>
+    <td>${first
+      ? `<button class="rm" title="Split — isi item ka aur vendor" onclick="impSplit(this)">+</button>`
+      : `<button class="rm" title="Remove" onclick="this.closest('tr').remove();impRecalc()">✕</button>`}</td>
+  </tr>`;
+}
+function impSplit(btn){
+  const tr=btn.closest('.imp-row');
+  const t=document.createElement('template');
+  t.innerHTML=impRowHTML(tr.dataset.mat, tr.dataset.unit, 0, tr.querySelector('.imp-exp').value, false).trim();
+  tr.after(t.content.firstChild);
+  impRecalc();
+}
 function impRecalc(){
   let t=0;
   $$('#impRows .imp-row').forEach(r=>{
     if(!r.querySelector('.imp-vendor').value) return;
-    t += (Number(r.querySelector('.imp-rate').value)||0)*(Number(r.dataset.qty)||0);
+    t += (Number(r.querySelector('.imp-rate').value)||0)*(Number(r.querySelector('.imp-qty').value)||0);
   });
   const el=$('#impTotal'); if(el) el.textContent=money(t);
 }
 async function saveImportIMS(){
   const items = $$('#impRows .imp-row').map(r=>({
-    Material:r.dataset.mat, OrderedQty:r.dataset.qty, Unit:r.dataset.unit,
+    Material:r.dataset.mat, OrderedQty:r.querySelector('.imp-qty').value, Unit:r.dataset.unit,
     Rate:r.querySelector('.imp-rate').value, VendorID:r.querySelector('.imp-vendor').value,
     ExpectedDate:r.querySelector('.imp-exp').value
-  })).filter(x=>x.VendorID);
-  if(!items.length) return toast('Kam se kam ek item ka vendor select karo','error');
+  })).filter(x=>x.VendorID && Number(x.OrderedQty)>0);
+  if(!items.length) return toast('Kam se kam ek item ka vendor + qty daalo','error');
+  const poObj=(State.imsPOs||[]).find(p=>p.POID==importPOID);
+  const pend={}, disp={};
+  (poObj?poObj.items:[]).forEach(i=>{ const k=String(i.Material).toLowerCase(); pend[k]=Number(i.PendingQty)||0; disp[k]=i.Material; });
+  const sum={};
+  items.forEach(it=>{ const k=String(it.Material).toLowerCase(); sum[k]=(sum[k]||0)+Number(it.OrderedQty); });
+  for(const k in sum){ if(sum[k]>pend[k]) return toast('"'+(disp[k]||k)+'" ki qty pending ('+pend[k]+') se zyada hai','error'); }
   const btn=$('#impSave'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
   try{
     const res=await api({action:'importIMSPO', IMS_POID:importPOID, Date:$('#impDate').value,
