@@ -1104,14 +1104,14 @@ function openImportIMS(poid){
       ${pending.map(i=>`<tr class="imp-row" data-mat="${esc(i.Material)}" data-unit="${esc(i.Unit||'')}" data-qty="${esc(i.Qty)}">
         <td>${esc(i.Material)}<div style="font-size:11px;color:var(--muted)">${esc(i.Qty)} ${esc(i.Unit||'')}</div></td>
         <td><select class="imp-vendor" onchange="impRecalc()">${impVendorOptions(i.Material)}</select></td>
+        <td><input type="date" class="imp-exp" value="${esc(po.ExpectedDate||'')}" style="width:140px"></td>
         <td><input type="number" min="0" step="any" class="imp-rate" placeholder="Rate" oninput="impRecalc()" style="width:100px"></td>
       </tr>`).join('')}
     </tbody></table>
     <div class="order-total" style="margin-top:10px">Total: <span id="impTotal" class="mono">₹0</span></div>
-    <p class="masters-note">Jis item ka vendor select nahi karoge wo import nahi hoga (pending rahega). Alag-alag vendor = alag-alag order.</p>
+    <p class="masters-note">Jis item ka vendor select nahi karoge wo import nahi hoga (pending rahega). Alag-alag vendor = alag-alag order, har order ki apni Expected Date.</p>
     <div class="form-grid" style="margin-top:12px">
       <div class="field"><label>Order Date</label><input type="date" id="impDate" value="${todayStr()}"></div>
-      <div class="field"><label>Expected Date</label><input type="date" id="impExp" value="${esc(po.ExpectedDate||'')}"></div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-light" onclick="closeModal()">Cancel</button>
@@ -1130,13 +1130,14 @@ function impRecalc(){
 async function saveImportIMS(){
   const items = $$('#impRows .imp-row').map(r=>({
     Material:r.dataset.mat, OrderedQty:r.dataset.qty, Unit:r.dataset.unit,
-    Rate:r.querySelector('.imp-rate').value, VendorID:r.querySelector('.imp-vendor').value
+    Rate:r.querySelector('.imp-rate').value, VendorID:r.querySelector('.imp-vendor').value,
+    ExpectedDate:r.querySelector('.imp-exp').value
   })).filter(x=>x.VendorID);
   if(!items.length) return toast('Kam se kam ek item ka vendor select karo','error');
   const btn=$('#impSave'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
   try{
     const res=await api({action:'importIMSPO', IMS_POID:importPOID, Date:$('#impDate').value,
-      ExpectedDate:$('#impExp').value, CreatedBy:State.user.Name, items:JSON.stringify(items)});
+      CreatedBy:State.user.Name, items:JSON.stringify(items)});
     toast('Order(s) bane: '+(res.created||[]).map(c=>c.PO_No).join(', '),'success');
     closeModal(); await loadAll(); loadIMSPOsBackground(); switchView('orders');
   }catch(e){ toast(e.message,'error'); btn.disabled=false; btn.textContent='Create Order(s)'; }
