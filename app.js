@@ -1034,24 +1034,37 @@ function renderIMSPOs(){
       <h3>IMS Pending POs</h3>
       <span class="stat-hint">${list.length} PO${list.length===1?'':'s'}</span>
     </div>
-    <div class="panel-body flush">${list.length ? list.map(po=>`
+    <div class="panel-body flush">${list.length ? list.map(po=>{
+      const st = po.ImportState||'none';
+      const stBadge = st==='full'
+        ? `<span class="badge b-green" style="margin-left:6px">Imported ✓${po.SMS_POs&&po.SMS_POs.length?' · '+po.SMS_POs.map(esc).join(', '):''}</span>`
+        : st==='partial'
+          ? `<span class="badge b-amber" style="margin-left:6px">Partial ${po.ImportedCount}/${po.TotalCount}</span>`
+          : '';
+      const btn = st==='full'
+        ? `<button class="btn btn-light btn-sm" disabled>Imported</button>`
+        : `<button class="btn btn-primary btn-sm" onclick="openImportIMS('${esc(po.POID)}')">${st==='partial'?'Import remaining':'Import to Order'}</button>`;
+      return `
       <div style="border-bottom:1px solid var(--border);padding:12px 16px">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
           <div class="row-strong">${esc(po.POID)}
             <span class="badge ${po.Status==='Partial'?'b-amber':'b-blue'}" style="margin-left:6px">${esc(po.Status)}</span>
-            ${po.Imported?`<span class="badge b-green" style="margin-left:6px">Imported → ${esc(po.SMS_PO||'')}</span>`:''}
+            ${stBadge}
           </div>
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <div style="font-size:12px;color:var(--muted)">${esc(po.Date||'')}${po.Supplier?' · '+esc(po.Supplier):''}</div>
-            ${po.Imported
-              ? `<button class="btn btn-light btn-sm" disabled>Imported</button>`
-              : `<button class="btn btn-primary btn-sm" onclick="openImportIMS('${esc(po.POID)}')">Import to Order</button>`}
+            ${btn}
           </div>
         </div>
         <table class="mini-table" style="margin-top:8px"><tbody>
-          ${po.items.map(i=>`<tr><td>${esc(i.Material)}</td><td>${esc(i.Qty)} ${esc(i.Unit||'')}</td></tr>`).join('')}
+          ${po.items.map(i=>`<tr>
+            <td>${i.Imported?'<span style="color:var(--green)">✓</span> ':''}${esc(i.Material)}</td>
+            <td>${esc(i.Qty)} ${esc(i.Unit||'')}</td>
+            <td style="color:var(--muted);font-size:11px">${i.Imported?'imported':'pending'}</td>
+          </tr>`).join('')}
         </tbody></table>
-      </div>`).join('') : emptyState('No pending POs from IMS','')}
+      </div>`;
+    }).join('') : emptyState('No pending POs from IMS','')}
     </div></div>`;
 }
 
@@ -1068,63 +1081,65 @@ async function syncFromIMS(){
 
 /* ----- Import IMS PO -> SMS Order ----- */
 let importPOID = null;
+function impVendorOptions(material){
+  const active = State.vendors.filter(v=>v.Status!=='Inactive');
+  const pref = active.find(v=>String(vendorTagFor(v.VendorID,material)).toLowerCase()==='preferred');
+  const def = pref ? pref.VendorID : '';
+  return `<option value="">Select vendor</option>` + active.map(v=>{
+    const tag=vendorTagFor(v.VendorID,material);
+    const blk=String(tag).toLowerCase()==='blacklisted';
+    return `<option value="${esc(v.VendorID)}" ${v.VendorID===def?'selected':''} ${blk?'disabled':''}>${esc(v.Name)}${tag?` · ${esc(tag)}`:''}</option>`;
+  }).join('');
+}
 function openImportIMS(poid){
   const po = (State.imsPOs||[]).find(x=>x.POID==poid);
   if(!po){ toast('IMS PO not found','error'); return; }
   importPOID = poid;
-  const vendors = State.vendors.filter(v=>v.Status!=='Inactive');
-  openModal('Import '+poid+' → Order', `
-    <div class="field"><label>Vendor <span class="req">*</span></label>
-      <select id="impVendor"><option value="">Select vendor</option>
-        ${vendors.map(v=>`<option value="${esc(v.VendorID)}">${esc(v.Name)}</option>`).join('')}
-      </select></div>
-    <h4 class="mini-head" style="margin-top:16px">Items — rate bharo</h4>
+  const pending = po.items.filter(i=>!i.Imported);
+  const done = po.items.filter(i=>i.Imported);
+  openModal('Import '+poid+' → Order(s)', `
+    ${done.length?`<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Already imported: ${done.map(i=>esc(i.Material)).join(', ')}</div>`:''}
+    <h4 class="mini-head">Items — har item ka vendor + rate</h4>
     <table class="mini-table" id="impRows"><tbody>
-      ${po.items.map(i=>`<tr class="imp-row" data-mat="${esc(i.Material)}" data-unit="${esc(i.Unit||'')}" data-qty="${esc(i.Qty)}">
-        <td>${esc(i.Material)}</td>
-        <td>${esc(i.Qty)} ${esc(i.Unit||'')}</td>
-        <td><input type="number" min="0" step="any" class="imp-rate" placeholder="Rate" oninput="impRecalc()" style="width:110px"></td>
+      ${pending.map(i=>`<tr class="imp-row" data-mat="${esc(i.Material)}" data-unit="${esc(i.Unit||'')}" data-qty="${esc(i.Qty)}">
+        <td>${esc(i.Material)}<div style="font-size:11px;color:var(--muted)">${esc(i.Qty)} ${esc(i.Unit||'')}</div></td>
+        <td><select class="imp-vendor" onchange="impRecalc()">${impVendorOptions(i.Material)}</select></td>
+        <td><input type="number" min="0" step="any" class="imp-rate" placeholder="Rate" oninput="impRecalc()" style="width:100px"></td>
       </tr>`).join('')}
     </tbody></table>
     <div class="order-total" style="margin-top:10px">Total: <span id="impTotal" class="mono">₹0</span></div>
+    <p class="masters-note">Jis item ka vendor select nahi karoge wo import nahi hoga (pending rahega). Alag-alag vendor = alag-alag order.</p>
     <div class="form-grid" style="margin-top:12px">
       <div class="field"><label>Order Date</label><input type="date" id="impDate" value="${todayStr()}"></div>
       <div class="field"><label>Expected Date</label><input type="date" id="impExp" value="${esc(po.ExpectedDate||'')}"></div>
     </div>
     <div class="modal-actions">
       <button class="btn btn-light" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" id="impSave" onclick="saveImportIMS()">Create Order</button>
+      <button class="btn btn-primary" id="impSave" onclick="saveImportIMS()">Create Order(s)</button>
     </div>`);
+  impRecalc();
 }
 function impRecalc(){
   let t=0;
   $$('#impRows .imp-row').forEach(r=>{
-    t += (Number(r.querySelector('.imp-rate').value)||0) * (Number(r.dataset.qty)||0);
+    if(!r.querySelector('.imp-vendor').value) return;
+    t += (Number(r.querySelector('.imp-rate').value)||0)*(Number(r.dataset.qty)||0);
   });
   const el=$('#impTotal'); if(el) el.textContent=money(t);
 }
 async function saveImportIMS(){
-  const vendorId = $('#impVendor').value;
-  if(!vendorId) return toast('Select a vendor','error');
   const items = $$('#impRows .imp-row').map(r=>({
-    Material: r.dataset.mat,
-    OrderedQty: r.dataset.qty,
-    Unit: r.dataset.unit,
-    Rate: r.querySelector('.imp-rate').value
-  }));
-  if(!items.length) return toast('No items in this PO','error');
+    Material:r.dataset.mat, OrderedQty:r.dataset.qty, Unit:r.dataset.unit,
+    Rate:r.querySelector('.imp-rate').value, VendorID:r.querySelector('.imp-vendor').value
+  })).filter(x=>x.VendorID);
+  if(!items.length) return toast('Kam se kam ek item ka vendor select karo','error');
   const btn=$('#impSave'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
   try{
-    const res = await api({action:'addOrder', VendorID:vendorId, Date:$('#impDate').value,
-      ExpectedDate:$('#impExp').value, CreatedBy:State.user.Name,
-      Remarks:'Imported from IMS '+importPOID, LeadTime:0,
-      IMS_POID:importPOID, items:JSON.stringify(items)});
-    toast('Order '+res.PO_No+' created from '+importPOID,'success');
-    closeModal();
-    await loadAll();
-    loadIMSPOsBackground();   // imported flag refresh
-    switchView('orders');
-  }catch(e){ toast(e.message,'error'); btn.disabled=false; btn.textContent='Create Order'; }
+    const res=await api({action:'importIMSPO', IMS_POID:importPOID, Date:$('#impDate').value,
+      ExpectedDate:$('#impExp').value, CreatedBy:State.user.Name, items:JSON.stringify(items)});
+    toast('Order(s) bane: '+(res.created||[]).map(c=>c.PO_No).join(', '),'success');
+    closeModal(); await loadAll(); loadIMSPOsBackground(); switchView('orders');
+  }catch(e){ toast(e.message,'error'); btn.disabled=false; btn.textContent='Create Order(s)'; }
 }
 
 /* =========================================================
