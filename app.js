@@ -1100,7 +1100,12 @@ function openImportIMS(poid){
   openModal('Import '+poid+' → Order(s)', `
     ${done.length?`<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Already imported: ${done.map(i=>esc(i.Material)).join(', ')}</div>`:''}
     <h4 class="mini-head">Items — har item ka vendor + rate</h4>
-    <table class="mini-table" id="impRows"><tbody>
+    <table class="mini-table" id="impRows">
+      <thead><tr>
+        <th style="text-align:left">Item</th><th style="text-align:left">Vendor</th>
+        <th style="text-align:left">Expected</th><th style="text-align:left">Rate</th>
+      </tr></thead>
+      <tbody>
       ${pending.map(i=>`<tr class="imp-row" data-mat="${esc(i.Material)}" data-unit="${esc(i.Unit||'')}" data-qty="${esc(i.Qty)}">
         <td>${esc(i.Material)}<div style="font-size:11px;color:var(--muted)">${esc(i.Qty)} ${esc(i.Unit||'')}</div></td>
         <td><select class="imp-vendor" onchange="impRecalc()">${impVendorOptions(i.Material)}</select></td>
