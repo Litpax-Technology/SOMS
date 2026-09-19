@@ -922,7 +922,9 @@ function renderMasters(){
   const items=[...(State.items||[])].sort((a,b)=>String(a.Category).localeCompare(String(b.Category))||String(a.Item).localeCompare(String(b.Item)));
   const byCat={}; items.forEach(i=>{ const c=i.Category||'Other'; (byCat[c]=byCat[c]||[]).push(i); });
   $('#viewRoot').innerHTML = `
-    <div class="section-actions"><button class="btn btn-primary" onclick="openItemForm()">+ Add Item</button><div class="spacer"></div></div>
+    <div class="section-actions"><button class="btn btn-primary" onclick="openItemForm()">+ Add Item</button>
+      <button class="btn btn-light" onclick="syncFromIMS()">⟳ Sync from IMS</button>
+      <div class="spacer"></div></div>
     <div class="panel">
       <div class="panel-head"><h3>Items</h3><span class="stat-hint">${items.length} item${items.length===1?'':'s'}</span></div>
       <div class="panel-body">
@@ -1037,14 +1039,92 @@ function renderIMSPOs(){
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
           <div class="row-strong">${esc(po.POID)}
             <span class="badge ${po.Status==='Partial'?'b-amber':'b-blue'}" style="margin-left:6px">${esc(po.Status)}</span>
+            ${po.Imported?`<span class="badge b-green" style="margin-left:6px">Imported → ${esc(po.SMS_PO||'')}</span>`:''}
           </div>
-          <div style="font-size:12px;color:var(--muted)">${esc(po.Date||'')}${po.Supplier?' · '+esc(po.Supplier):''}</div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+            <div style="font-size:12px;color:var(--muted)">${esc(po.Date||'')}${po.Supplier?' · '+esc(po.Supplier):''}</div>
+            ${po.Imported
+              ? `<button class="btn btn-light btn-sm" disabled>Imported</button>`
+              : `<button class="btn btn-primary btn-sm" onclick="openImportIMS('${esc(po.POID)}')">Import to Order</button>`}
+          </div>
         </div>
         <table class="mini-table" style="margin-top:8px"><tbody>
           ${po.items.map(i=>`<tr><td>${esc(i.Material)}</td><td>${esc(i.Qty)} ${esc(i.Unit||'')}</td></tr>`).join('')}
         </tbody></table>
       </div>`).join('') : emptyState('No pending POs from IMS','')}
     </div></div>`;
+}
+
+/* ----- Sync items + categories from IMS ----- */
+async function syncFromIMS(){
+  if(!confirm('IMS se items + categories sync karein?\n• Categories IMS jaisi ho jayengi (extra SMS categories hat sakti hain)\n• Items add/update honge, delete nahi.')) return;
+  toast('Syncing from IMS…','info');
+  try{
+    const r = await api({action:'syncFromIMS'});
+    toast(`Synced — ${r.added} added, ${r.updated} updated (${r.items} IMS items)`,'success');
+    await loadAll(); renderMasters();
+  }catch(e){ toast(e.message,'error'); }
+}
+
+/* ----- Import IMS PO -> SMS Order ----- */
+let importPOID = null;
+function openImportIMS(poid){
+  const po = (State.imsPOs||[]).find(x=>x.POID==poid);
+  if(!po){ toast('IMS PO not found','error'); return; }
+  importPOID = poid;
+  const vendors = State.vendors.filter(v=>v.Status!=='Inactive');
+  openModal('Import '+poid+' → Order', `
+    <div class="field"><label>Vendor <span class="req">*</span></label>
+      <select id="impVendor"><option value="">Select vendor</option>
+        ${vendors.map(v=>`<option value="${esc(v.VendorID)}">${esc(v.Name)}</option>`).join('')}
+      </select></div>
+    <h4 class="mini-head" style="margin-top:16px">Items — rate bharo</h4>
+    <table class="mini-table" id="impRows"><tbody>
+      ${po.items.map(i=>`<tr class="imp-row" data-mat="${esc(i.Material)}" data-unit="${esc(i.Unit||'')}" data-qty="${esc(i.Qty)}">
+        <td>${esc(i.Material)}</td>
+        <td>${esc(i.Qty)} ${esc(i.Unit||'')}</td>
+        <td><input type="number" min="0" step="any" class="imp-rate" placeholder="Rate" oninput="impRecalc()" style="width:110px"></td>
+      </tr>`).join('')}
+    </tbody></table>
+    <div class="order-total" style="margin-top:10px">Total: <span id="impTotal" class="mono">₹0</span></div>
+    <div class="form-grid" style="margin-top:12px">
+      <div class="field"><label>Order Date</label><input type="date" id="impDate" value="${todayStr()}"></div>
+      <div class="field"><label>Expected Date</label><input type="date" id="impExp" value="${esc(po.ExpectedDate||'')}"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-light" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" id="impSave" onclick="saveImportIMS()">Create Order</button>
+    </div>`);
+}
+function impRecalc(){
+  let t=0;
+  $$('#impRows .imp-row').forEach(r=>{
+    t += (Number(r.querySelector('.imp-rate').value)||0) * (Number(r.dataset.qty)||0);
+  });
+  const el=$('#impTotal'); if(el) el.textContent=money(t);
+}
+async function saveImportIMS(){
+  const vendorId = $('#impVendor').value;
+  if(!vendorId) return toast('Select a vendor','error');
+  const items = $$('#impRows .imp-row').map(r=>({
+    Material: r.dataset.mat,
+    OrderedQty: r.dataset.qty,
+    Unit: r.dataset.unit,
+    Rate: r.querySelector('.imp-rate').value
+  }));
+  if(!items.length) return toast('No items in this PO','error');
+  const btn=$('#impSave'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
+  try{
+    const res = await api({action:'addOrder', VendorID:vendorId, Date:$('#impDate').value,
+      ExpectedDate:$('#impExp').value, CreatedBy:State.user.Name,
+      Remarks:'Imported from IMS '+importPOID, LeadTime:0,
+      IMS_POID:importPOID, items:JSON.stringify(items)});
+    toast('Order '+res.PO_No+' created from '+importPOID,'success');
+    closeModal();
+    await loadAll();
+    loadIMSPOsBackground();   // imported flag refresh
+    switchView('orders');
+  }catch(e){ toast(e.message,'error'); btn.disabled=false; btn.textContent='Create Order'; }
 }
 
 /* =========================================================
