@@ -4,7 +4,7 @@
  * (Deploy > Web app > Execute as: Me > Access: Anyone > copy /exec URL)
  * ========================================================= */
 const CONFIG = {
-  API_URL: "https://script.google.com/macros/s/AKfycbyzZBc5YBiujij6X0y73d0VWB0WMfw5d7ktSZMMCjNph0r0MIbRVXAHtj-K7H_lhqtOZg/exec",   // <-- replace this
+  API_URL: "https://script.google.com/macros/s/AKfycbxFhUh-OV3O7QLcLkA6OGT3v4epuXgEIa6l7tkAEV80gg_3JklRkvA2WODyiys8irnSgg/exec",   // <-- replace this
   APP_NAME: "Litpax SMS",
   APP_SUBTITLE: "Store Management System",
   COMPANY: "Litpax Technology",
