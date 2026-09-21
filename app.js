@@ -113,6 +113,7 @@ async function doLogin(){
     const u = await api({ action:'login', pin });
     State.user = u;
     State.token = u.token;
+    try{ sessionStorage.setItem('sms_session', JSON.stringify(u)); }catch(e){}
     $('#loginScreen').classList.add('hidden');
     $('#app').classList.remove('hidden');
     $('#userName').textContent = u.Name;
@@ -126,6 +127,28 @@ async function doLogin(){
     err.textContent = e.message;
   }finally{
     btn.disabled=false; btn.textContent='Sign In';
+  }
+}
+
+async function resumeSession(u){
+  State.user = u;
+  State.token = u.token;
+  $('#loginScreen').classList.add('hidden');
+  $('#app').classList.remove('hidden');
+  $('#userName').textContent = u.Name;
+  $('#userRole').textContent = u.Role;
+  $('#userAvatar').textContent = (u.Name||'A').charAt(0).toUpperCase();
+  try{
+    await loadAll();
+    applyRoleNav();
+    switchView(allowedViews()[0] || 'dashboard');
+    loadIMSPOsBackground();
+  }catch(e){
+    // token expire/invalid → session hata ke login screen
+    try{ sessionStorage.removeItem('sms_session'); }catch(_){}
+    $('#app').classList.add('hidden');
+    $('#loginScreen').classList.remove('hidden');
+    setTimeout(()=>$('#pinInput').focus(), 100);
   }
 }
 
@@ -1544,7 +1567,7 @@ function closeSidebar(){ $('#sidebar').classList.remove('show'); $('#sidebarOver
 function init(){
   $('#loginBtn').addEventListener('click', doLogin);
   $('#pinInput').addEventListener('keydown', e=>{ if(e.key==='Enter') doLogin(); });
-  $('#logoutBtn').addEventListener('click', ()=>{ location.href = 'https://litpax-technology.github.io/IMS/'; });
+  $('#logoutBtn').addEventListener('click', ()=>{ try{ sessionStorage.removeItem('sms_session'); }catch(e){} location.href = 'https://litpax-technology.github.io/IMS/'; });
   $('#refreshBtn').addEventListener('click', refresh);
   $('#poSearch').addEventListener('input', poSearch);
   $('#poSearch').addEventListener('keydown', poSearchEnter);
@@ -1554,6 +1577,15 @@ function init(){
   $('#sidebarOverlay').addEventListener('click', closeSidebar);
   $$('.nav-item').forEach(n=>n.addEventListener('click', ()=>switchView(n.dataset.view)));
   document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeModal(); });
+
+  // Session restore — reload pe logout na ho
+  let saved=null;
+  try{ saved = JSON.parse(sessionStorage.getItem('sms_session')||'null'); }catch(e){}
+  if(saved && saved.token){
+    resumeSession(saved);
+    return;
+  }
+
   const urlPin = new URLSearchParams(location.search).get('pin');
   if(urlPin){
     $('#pinInput').value = urlPin;
