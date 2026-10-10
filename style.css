@@ -530,3 +530,8 @@ tr.open .expand-ic{transform:rotate(90deg)}
 
 .order-mats .mat-qty{ font-weight:600; }
 .order-mats .mat-more{ opacity:.75; }
+
+/* Vendor materials: multi-row add */
+.mm-row select.mm-mat{min-width:230px}
+.mm-row .mm-rate{width:100px}
+.mm-row select, .mm-row input{width:100%}
