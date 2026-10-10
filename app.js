@@ -7,11 +7,12 @@ const State = {
   token: null,
   config: { lists:{}, settings:{} },
   vendors: [], vendorMaterials: [], items: [], orders: [], orderItems: [], receiving: [], followups: [], transport: [], transportFollowups: [],
-  imsPOs: [],
+  imsPOs: [], diary: [],
   view: 'dashboard'
 };
 
 /* ---------- JSONP ---------- */
+const NO_ALL = ['getAll','login','getIMSPendingPOs','addNote','setNoteStatus'];
 function api(params){
   return new Promise((resolve, reject)=>{
     if(!CONFIG.API_URL || CONFIG.API_URL.indexOf('PASTE_') === 0){
@@ -21,8 +22,15 @@ function api(params){
     const script = document.createElement('script');
     const timer = setTimeout(()=>{ cleanup(); reject(new Error('Request timed out')); }, CONFIG.REQUEST_TIMEOUT || 30000);
     function cleanup(){ clearTimeout(timer); delete window[cb]; if(script.parentNode) script.parentNode.removeChild(script); }
-    window[cb] = (res)=>{ cleanup(); (res && res.ok) ? resolve(res.data) : reject(new Error((res && res.error) || 'Unknown error')); };
+    window[cb] = (res)=>{
+      cleanup();
+      if(!(res && res.ok)) return reject(new Error((res && res.error) || 'Unknown error'));
+      let data = res.data;
+      if(data && data.__all){ applyAll(data.__all); State._freshAt = Date.now(); data = data.result; }
+      resolve(data);
+    };
     if(State.token && !params.token) params.token = State.token;
+    if(params.action && !NO_ALL.includes(params.action)) params.withAll = '1';
     const qs = Object.keys(params).map(k=>encodeURIComponent(k)+'='+encodeURIComponent(params[k])).join('&');
     script.src = CONFIG.API_URL + '?' + qs + '&callback=' + cb;
     script.onerror = ()=>{ cleanup(); reject(new Error('Network error — check deployment access = Anyone')); };
@@ -152,8 +160,7 @@ async function resumeSession(u){
   }
 }
 
-async function loadAll(){
-  const d = await api({ action:'getAll' });
+function applyAll(d){
   State.config = d.config || {lists:{},settings:{}};
   State.vendors = d.vendors||[];
   State.vendorMaterials = d.vendorMaterials||[];
@@ -164,6 +171,13 @@ async function loadAll(){
   State.followups = d.followups||[];
   State.transport = d.transport||[];
   State.transportFollowups = d.transportFollowups||[];
+  State.diary = d.diary||[];
+  updateDiaryBadge();
+}
+async function loadAll(force){
+  // save ke response me fresh data aa chuka hai → dobara server call skip
+  if(!force && State._freshAt && Date.now()-State._freshAt < 5000){ State._freshAt = 0; return; }
+  applyAll(await api({ action:'getAll' }));
 }
 
 // IMS POs background mein — login ka wait nahi
@@ -174,7 +188,7 @@ function loadIMSPOsBackground(){
 }
 async function refresh(){
   const r = $('#refreshBtn'); r.classList.add('spinning');
-  try{ await loadAll(); render(); loadIMSPOsBackground(); }
+  try{ await loadAll(true); render(); loadIMSPOsBackground(); }
   catch(e){ toast(e.message,'error'); }
   finally{ setTimeout(()=>r.classList.remove('spinning'),600); }
 }
@@ -194,6 +208,7 @@ function applyRoleNav(){
   $$('.nav-item').forEach(n=> n.style.display = allow.includes(n.dataset.view)?'':'none');
   const wrap=$('#poSearchWrap'); if(wrap) wrap.style.display = allow.includes('orders') ? '' : 'none';
   const sb=$('#stickerBtn'); if(sb) sb.style.display = allow.includes('orders') ? '' : 'none';
+  const db=$('#diaryBtn'); if(db) db.style.display = allow.includes('orders') ? '' : 'none';
 }
 function poSearch(){
   const q=($('#poSearch').value||'').toLowerCase().trim();
@@ -861,24 +876,61 @@ function renderVendors(){
       <button class="btn btn-primary" onclick="openVendorForm()">+ Add Vendor</button>
       <div class="spacer"></div>
     </div>
-    <div class="filters"><input class="search-box" id="vSearch" placeholder="Search vendor..." oninput="renderVendorTable()"></div>
+    <div class="filters">
+      <input class="search-box" id="vSearch" placeholder="Search vendor..." oninput="renderVendorTable()">
+      <select id="vItem" onchange="renderVendorTable()">
+        <option value="">All items</option>${materialOptions()}
+      </select>
+    </div>
+    <div id="vItemNote" class="v-item-note"></div>
     <div class="panel"><div class="panel-body flush"><div class="table-wrap"><table>
-      <thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Materials &amp; Tags</th><th>Phone</th><th>Terms</th><th>Status</th><th></th></tr></thead>
+      <thead><tr><th>ID</th><th>Name</th><th>Category</th><th>Materials &amp; Tags</th><th>Address</th><th>Phone</th><th>Terms</th><th>Status</th><th></th></tr></thead>
       <tbody id="vendorTbody"></tbody>
     </table></div></div></div>`;
   renderVendorTable();
 }
+const TAG_RANK = {preferred:0, approved:1, trial:2, blacklisted:9};
+function vendorMapLink(v){
+  const ml = String(v.MapLink||'').trim();
+  if(/^https?:\/\//i.test(ml)) return ml;
+  const a = String(v.Address||'').trim();
+  return a ? 'https://www.google.com/maps/search/?api=1&query='+encodeURIComponent(a) : '';
+}
 function renderVendorTable(){
   const q=($('#vSearch')?.value||'').toLowerCase();
-  const list=State.vendors.filter(v=>!q||String(v.Name).toLowerCase().includes(q)||String(v.Category||'').toLowerCase().includes(q));
+  const item=$('#vItem')?.value||'';
+  let list=State.vendors.filter(v=>!q||String(v.Name).toLowerCase().includes(q)||String(v.Category||'').toLowerCase().includes(q));
+  const mapOf=id=>State.vendorMaterials.find(m=>m.VendorID==id && m.Material==item);
+  const note=$('#vItemNote');
+  if(item){
+    list=list.filter(v=>mapOf(v.VendorID)).sort((a,b)=>
+      (TAG_RANK[String(mapOf(a.VendorID).Tag).toLowerCase()]??5) - (TAG_RANK[String(mapOf(b.VendorID).Tag).toLowerCase()]??5));
+    if(note) note.innerHTML=`<b>${esc(item)}</b> — ${list.length} vendor${list.length===1?'':'s'}`;
+  }else if(note) note.innerHTML='';
   const tb=$('#vendorTbody');
-  if(!list.length){ tb.innerHTML=`<tr><td colspan="8">${emptyState('No vendors yet','Add your first vendor')}</td></tr>`; return; }
+  if(!list.length){
+    tb.innerHTML=`<tr><td colspan="9">${item
+      ? emptyState('Is item ka koi vendor mapped nahi','Vendor ke "Materials" me jaake map karo')
+      : emptyState('No vendors yet','Add your first vendor')}</td></tr>`;
+    return;
+  }
   tb.innerHTML=list.map(v=>{
     const maps=State.vendorMaterials.filter(m=>m.VendorID==v.VendorID);
-    const tags=maps.length?maps.map(m=>`<span class="badge ${tagClass(m.Tag)}" style="margin:2px 3px 2px 0">${esc(m.Material)}: ${esc(m.Tag)}</span>`).join(''):'<span style="color:var(--muted)">—</span>';
+    let tags;
+    if(item){
+      const m=mapOf(v.VendorID);
+      tags=`<span class="badge ${tagClass(m.Tag)}">${esc(m.Tag)}</span>${m.LastRate?`<span class="mono v-rate">${money(m.LastRate)}</span>`:''}`
+        + (maps.length>1?`<div class="v-more">+${maps.length-1} other item${maps.length>2?'s':''}</div>`:'');
+    }else{
+      tags=maps.length?maps.map(m=>`<span class="badge ${tagClass(m.Tag)}" style="margin:2px 3px 2px 0">${esc(m.Material)}: ${esc(m.Tag)}</span>`).join(''):'<span style="color:var(--muted)">—</span>';
+    }
+    const link=vendorMapLink(v);
+    const addr=(v.Address||link)
+      ? `${v.Address?`<div class="v-addr">${esc(v.Address)}</div>`:''}${link?`<a class="v-map" href="${esc(link)}" target="_blank" rel="noopener">📍 Map</a>`:''}`
+      : '<span style="color:var(--muted)">—</span>';
     return `<tr>
       <td class="row-strong">${esc(v.VendorID)}</td><td>${esc(v.Name)}</td><td>${esc(v.Category||'')}</td>
-      <td style="max-width:280px">${tags}</td><td>${esc(v.Phone||'')}</td><td>${esc(v.PaymentTerms||'')}</td>
+      <td style="max-width:280px">${tags}</td><td>${addr}</td><td>${esc(v.Phone||'')}</td><td>${esc(v.PaymentTerms||'')}</td>
       <td>${v.Status==='Inactive'?'<span class="badge b-gray">Inactive</span>':'<span class="badge b-green">Active</span>'}</td>
       <td onclick="event.stopPropagation()">
         <button class="link-btn" onclick="openVendorForm('${esc(v.VendorID)}')">Edit</button>
@@ -898,6 +950,7 @@ function openVendorForm(vendorId){
       <div class="field"><label>GST</label><input id="veGst" value="${esc(v?v.GST:'')}"></div>
       <div class="field"><label>Payment Terms</label><select id="veTerms"><option value="">—</option>${opt(terms,v?v.PaymentTerms:'')}</select></div>
       <div class="field full"><label>Address</label><input id="veAddr" value="${esc(v?v.Address:'')}"></div>
+      <div class="field full"><label>Map Link (optional)</label><input id="veMap" placeholder="Google Maps link paste karo — khali chhodo to address se banega" value="${esc(v?(v.MapLink||''):'')}"></div>
       ${v?`<div class="field"><label>Status</label><select id="veStatus">
         <option ${v.Status!=='Inactive'?'selected':''}>Active</option>
         <option ${v.Status==='Inactive'?'selected':''}>Inactive</option></select></div>`:''}
@@ -911,9 +964,11 @@ async function saveVendor(vendorId){
   const name=$('#veName').value.trim(); if(!name) return toast('Vendor name required','error');
   const phone=$('#vePhone').value.trim();
   if(phone && !/^\d{10}$/.test(phone)) return toast('Phone must be 10 digits','error');
+  const mapLink=$('#veMap').value.trim();
+  if(mapLink && !/^https?:\/\//i.test(mapLink)) return toast('Map link http se shuru hona chahiye','error');
   const btn=$('#veSave'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
   const fields={Name:name,Category:$('#veCat').value,Contact:$('#veContact').value,
-    Phone:phone,GST:$('#veGst').value,Address:$('#veAddr').value,PaymentTerms:$('#veTerms').value};
+    Phone:phone,GST:$('#veGst').value,Address:$('#veAddr').value,PaymentTerms:$('#veTerms').value,MapLink:mapLink};
   try{
     if(vendorId){
       fields.VendorID=vendorId; fields.action='updateVendor'; fields.Status=$('#veStatus').value;
@@ -1166,6 +1221,7 @@ async function syncFromIMS(){
 
 /* ----- Import IMS PO -> SMS Order ----- */
 let importPOID = null;
+let impPending = {};
 function impVendorOptions(material){
   const active = State.vendors.filter(v=>v.Status!=='Inactive');
   const pref = active.find(v=>String(vendorTagFor(v.VendorID,material)).toLowerCase()==='preferred');
@@ -1180,6 +1236,8 @@ function openImportIMS(poid){
   const po = (State.imsPOs||[]).find(x=>x.POID==poid);
   if(!po){ toast('IMS PO not found','error'); return; }
   importPOID = poid;
+  impPending = {};
+  po.items.forEach(i=>{ impPending[i.Material] = Number(i.PendingQty)||0; });
   const pending = po.items.filter(i=>Number(i.PendingQty)>0);
   const done = po.items.filter(i=>Number(i.PendingQty)<=0 && Number(i.OrderedQty)>0);
   openModal('Import '+poid+' → Order(s)', `
@@ -1192,6 +1250,7 @@ function openImportIMS(poid){
       </tbody>
     </table></div>
     <div class="order-total" style="margin-top:10px">Total: <span id="impTotal" class="mono">₹0</span></div>
+    <div id="impExtra" class="imp-extra"></div>
     <p class="masters-note">Kisi item ka "+" dabao to usi item ka aur vendor add karo (qty baant do). Alag vendor = alag order. Bachi qty pending rahegi.</p>
     <div class="form-grid" style="margin-top:12px">
       <div class="field"><label>Order Date</label><input type="date" id="impDate" value="${todayStr()}"></div>
@@ -1222,12 +1281,20 @@ function impSplit(btn){
   impRecalc();
 }
 function impRecalc(){
-  let t=0;
+  let t=0; const sum={};
   $$('#impRows .imp-row').forEach(r=>{
     if(!r.querySelector('.imp-vendor').value) return;
-    t += (Number(r.querySelector('.imp-rate').value)||0)*(Number(r.querySelector('.imp-qty').value)||0);
+    const q=Number(r.querySelector('.imp-qty').value)||0;
+    t += (Number(r.querySelector('.imp-rate').value)||0)*q;
+    sum[r.dataset.mat]=(sum[r.dataset.mat]||0)+q;
   });
   const el=$('#impTotal'); if(el) el.textContent=money(t);
+  const ex=$('#impExtra');
+  if(ex){
+    const lines=Object.keys(sum).filter(m=>sum[m]>(impPending[m]||0))
+      .map(m=>`${esc(m)}: requirement ${impPending[m]||0}, order ${sum[m]} → <b>Extra +${sum[m]-(impPending[m]||0)}</b>`);
+    ex.innerHTML=lines.length?'ℹ '+lines.join('<br>'):'';
+  }
 }
 async function saveImportIMS(){
   const items = $$('#impRows .imp-row').map(r=>({
@@ -1236,12 +1303,6 @@ async function saveImportIMS(){
     ExpectedDate:r.querySelector('.imp-exp').value
   })).filter(x=>x.VendorID && Number(x.OrderedQty)>0);
   if(!items.length) return toast('Kam se kam ek item ka vendor + qty daalo','error');
-  const poObj=(State.imsPOs||[]).find(p=>p.POID==importPOID);
-  const pend={}, disp={};
-  (poObj?poObj.items:[]).forEach(i=>{ const k=String(i.Material).toLowerCase(); pend[k]=Number(i.PendingQty)||0; disp[k]=i.Material; });
-  const sum={};
-  items.forEach(it=>{ const k=String(it.Material).toLowerCase(); sum[k]=(sum[k]||0)+Number(it.OrderedQty); });
-  for(const k in sum){ if(sum[k]>pend[k]) return toast('"'+(disp[k]||k)+'" ki qty pending ('+pend[k]+') se zyada hai','error'); }
   const btn=$('#impSave'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
   try{
     const res=await api({action:'importIMSPO', IMS_POID:importPOID, Date:$('#impDate').value,
@@ -1556,6 +1617,70 @@ function renderFreightTable(){
 }
 
 /* =========================================================
+ *  DIARY BOOK  (plain notes + tick = done)
+ * ========================================================= */
+function updateDiaryBadge(){
+  const b=$('#diaryCount'); if(!b) return;
+  const c=(State.diary||[]).filter(n=>n.Status!=='Done').length;
+  b.textContent=c; b.style.display=c?'':'none';
+}
+function setupDiaryUI(){
+  if($('#diaryBtn')) return;
+  const rb=$('#refreshBtn');
+  const btn=document.createElement('button');
+  btn.id='diaryBtn'; btn.type='button'; btn.className='diary-btn';
+  btn.innerHTML='📒 <span class="diary-lbl">Diary</span> <span id="diaryCount" class="diary-count" style="display:none"></span>';
+  btn.addEventListener('click', openDiary);
+  rb.parentNode.insertBefore(btn, rb);
+
+  const wrap=document.createElement('div');
+  wrap.id='diaryWrap'; wrap.className='diary-wrap hidden';
+  wrap.innerHTML=`<div class="diary-overlay" onclick="closeDiary()"></div>
+    <aside class="diary-panel">
+      <div class="diary-head"><h3>📒 Diary Book</h3><button class="diary-x" onclick="closeDiary()">✕</button></div>
+      <div class="diary-add">
+        <textarea id="diaryInput" rows="2" maxlength="1000" placeholder="Note likho... (Ctrl+Enter = Add)"
+          onkeydown="if(event.key==='Enter'&&(event.ctrlKey||event.metaKey))addNote()"></textarea>
+        <button class="btn btn-primary btn-sm" id="diaryAddBtn" onclick="addNote()">+ Add</button>
+      </div>
+      <div id="diaryList" class="diary-list"></div>
+    </aside>`;
+  document.body.appendChild(wrap);
+}
+function openDiary(){ $('#diaryWrap').classList.remove('hidden'); renderDiary(); setTimeout(()=>$('#diaryInput').focus(),50); }
+function closeDiary(){ const w=$('#diaryWrap'); if(w) w.classList.add('hidden'); }
+function renderDiary(){
+  updateDiaryBadge();
+  const box=$('#diaryList'); if(!box) return;
+  const all=[...(State.diary||[])].sort((a,b)=>String(b.NoteID).localeCompare(String(a.NoteID)));
+  const open=all.filter(n=>n.Status!=='Done'), done=all.filter(n=>n.Status==='Done');
+  const row=n=>`<label class="diary-item ${n.Status==='Done'?'done':''}">
+      <input type="checkbox" ${n.Status==='Done'?'checked':''} onchange="toggleNote('${esc(n.NoteID)}',this)">
+      <div><div class="diary-text">${esc(n.Note)}</div>
+      <div class="diary-meta">${esc(n.Date)}${n.Status==='Done'&&n.DoneDate?' · Done '+esc(n.DoneDate):''}</div></div>
+    </label>`;
+  box.innerHTML=(open.length?open.map(row).join(''):'<div class="diary-empty">Koi pending note nahi ✓</div>')
+    +(done.length?`<div class="diary-sep">Done (${done.length})</div>${done.slice(0,50).map(row).join('')}`:'');
+}
+async function addNote(){
+  const inp=$('#diaryInput'); const note=inp.value.trim(); if(!note) return;
+  const btn=$('#diaryAddBtn'); btn.disabled=true;
+  try{
+    const n=await api({action:'addNote',Note:note});
+    (State.diary=State.diary||[]).push(n);
+    inp.value=''; renderDiary();
+  }catch(e){ toast(e.message,'error'); }
+  finally{ btn.disabled=false; inp.focus(); }
+}
+async function toggleNote(id, cb){
+  const n=(State.diary||[]).find(x=>x.NoteID==id); if(!n) return;
+  const prev={Status:n.Status, DoneDate:n.DoneDate};
+  n.Status=cb.checked?'Done':'Open'; n.DoneDate=cb.checked?todayStr():''; renderDiary();   // turant UI update
+  try{ const r=await api({action:'setNoteStatus',NoteID:id,Status:n.Status}); n.DoneDate=r.DoneDate; }
+  catch(e){ Object.assign(n,prev); renderDiary(); toast(e.message,'error'); }
+}
+
+/* =========================================================
  *  SIDEBAR (mobile)
  * ========================================================= */
 function openSidebar(){ $('#sidebar').classList.add('show'); $('#sidebarOverlay').classList.add('show'); }
@@ -1576,7 +1701,8 @@ function init(){
   $('#hamburger').addEventListener('click', openSidebar);
   $('#sidebarOverlay').addEventListener('click', closeSidebar);
   $$('.nav-item').forEach(n=>n.addEventListener('click', ()=>switchView(n.dataset.view)));
-  document.addEventListener('keydown', e=>{ if(e.key==='Escape') closeModal(); });
+  document.addEventListener('keydown', e=>{ if(e.key==='Escape'){ closeModal(); closeDiary(); } });
+  setupDiaryUI();
 
   // Session restore — reload pe logout na ho
   let saved=null;
