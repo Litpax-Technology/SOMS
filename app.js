@@ -1000,26 +1000,64 @@ function openMaterialMap(vendorId){
         </span>
       </div>`).join('')}
     </div>`:'<div class="empty" style="padding:16px"><span class="emoji">◇</span>No materials mapped yet</div>'}
-    <h4 style="margin:6px 0 10px;font-size:12px;color:var(--muted);text-transform:uppercase">Add Material</h4>
-    <div class="form-grid">
-      <div class="field"><label>Material</label><select id="mmMat"><option value="">Select</option>${mats.map(m=>`<option>${esc(m)}</option>`).join('')}</select></div>
-      <div class="field"><label>Tag</label><select id="mmTag">${tags.map(t=>`<option>${esc(t)}</option>`).join('')}</select></div>
-      <div class="field"><label>Last Rate</label><input type="number" min="0" step="any" id="mmRate"></div>
-      <div class="field"><label>Remarks</label><input id="mmRemarks"></div>
-    </div>
+    <h4 style="margin:6px 0 10px;font-size:12px;color:var(--muted);text-transform:uppercase">Add Materials</h4>
+    <div class="table-wrap"><table class="mini-table split-table">
+      <thead><tr><th>Item</th><th>Tag</th><th>Last Rate</th><th>Remarks</th><th></th></tr></thead>
+      <tbody id="mmBody"></tbody>
+    </table></div>
+    <button class="btn btn-light btn-sm" onclick="addMMRow()" style="margin-top:10px">+ Add Row</button>
     <div class="modal-actions">
       <button class="btn btn-light" onclick="closeModal()">Close</button>
-      <button class="btn btn-primary" id="mmSave" onclick="saveMap('${esc(vendorId)}')">Add Material</button>
+      <button class="btn btn-primary" id="mmSave" onclick="saveMap('${esc(vendorId)}')">Save All</button>
     </div>`);
+  mmVendor = vendorId;
+  addMMRow();
+}
+
+/* ----- multi-row add: category-wise grouped dropdown ----- */
+let mmVendor = '';
+function mmMaterialOptions(vendorId){
+  const mapped = new Set(State.vendorMaterials.filter(m=>m.VendorID==vendorId).map(m=>m.Material));
+  const opt = name => `<option value="${esc(name)}" ${mapped.has(name)?'disabled':''}>${esc(name)}${mapped.has(name)?' ✓':''}</option>`;
+  const items = State.items||[];
+  if(!items.length) return itemNames().map(opt).join('');
+  const byCat = {};
+  items.forEach(i=>{ const c=i.Category||'Other'; (byCat[c]=byCat[c]||[]).push(i.Item); });
+  return Object.keys(byCat).sort().map(cat=>
+    `<optgroup label="${catIcon(cat)} ${esc(cat)}">${byCat[cat].sort((a,b)=>String(a).localeCompare(String(b))).map(opt).join('')}</optgroup>`
+  ).join('');
+}
+function addMMRow(){
+  const tags = cfgList('VendorTags',['Preferred','Approved','Trial','Blacklisted']);
+  const tr = document.createElement('tr'); tr.className='mm-row';
+  tr.innerHTML = `
+    <td><select class="mm-mat"><option value="">Select item</option>${mmMaterialOptions(mmVendor)}</select></td>
+    <td><select class="mm-tag">${tags.map(t=>`<option ${t==='Approved'?'selected':''}>${esc(t)}</option>`).join('')}</select></td>
+    <td><input type="number" min="0" step="any" class="mm-rate" placeholder="Rate"></td>
+    <td><input class="mm-rem" placeholder="Note"></td>
+    <td><button class="rm" title="Remove" onclick="this.closest('tr').remove()">✕</button></td>`;
+  $('#mmBody').appendChild(tr);
 }
 async function saveMap(vendorId){
-  const mat=$('#mmMat').value; if(!mat) return toast('Select material','error');
+  const list = $$('#mmBody .mm-row').map(r=>({
+    Material: r.querySelector('.mm-mat').value,
+    Tag:      r.querySelector('.mm-tag').value,
+    LastRate: r.querySelector('.mm-rate').value,
+    Remarks:  r.querySelector('.mm-rem').value
+  })).filter(x=>x.Material);
+  if(!list.length) return toast('Kam se kam ek item select karo','error');
+  const seen = new Set();
+  for(const x of list){
+    if(seen.has(x.Material)) return toast('"'+x.Material+'" do baar select hai','error');
+    seen.add(x.Material);
+  }
   const btn=$('#mmSave'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
   try{
-    await api({action:'addVendorMaterial',VendorID:vendorId,Material:mat,Tag:$('#mmTag').value,
-      LastRate:$('#mmRate').value,Remarks:$('#mmRemarks').value});
-    toast('Material mapped','success'); await loadAll(); openMaterialMap(vendorId); renderVendorTable();
-  }catch(e){ toast(e.message,'error'); btn.disabled=false; btn.textContent='Add Material'; }
+    const r = await api({action:'addVendorMaterials', VendorID:vendorId, items:JSON.stringify(list)});
+    toast(r.added+' item(s) mapped'+(r.skipped&&r.skipped.length?' · '+r.skipped.length+' pehle se the':''),'success');
+    await loadAll(); openMaterialMap(vendorId);
+    if($('#vendorTbody')) renderVendorTable();
+  }catch(e){ toast(e.message,'error'); btn.disabled=false; btn.textContent='Save All'; }
 }
 async function saveMapEdit(vendorId, material, btn){
   const row=btn.closest('.map-row');
