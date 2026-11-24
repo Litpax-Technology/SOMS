@@ -1201,40 +1201,33 @@ async function deleteMaster(list, btn){
  * ========================================================= */
 function imsItemRow(i){
   const u = esc(i.Unit||'');
+  const ord = Number(i.OrderedQty)||0;
   const recv = Number(i.IMSReceived)>0
     ? `<div style="font-size:10px;color:var(--muted)">IMS received ${esc(i.IMSReceived)}</div>` : '';
-  const head = `<td>${esc(i.Material)}${recv}</td><td>${esc(i.Qty)} ${u}</td>`;
-  if(i.Approval==='approved'){
-    return `<tr data-mat="${esc(i.Material)}" data-appr="${esc(i.ApprovedQty)}">${head}
-      <td style="color:var(--green);font-weight:600">${esc(i.ApprovedQty)} ${u}
-        <button class="btn-ghost" style="padding:0 6px" title="Approved qty badlo" onclick="editApproveIMS(this)">✎</button></td>
-      <td>${esc(i.OrderedQty)}</td>
-      <td style="color:var(--amber);font-weight:600">${esc(i.PendingQty)}</td>
-      <td></td></tr>`;
-  }
-  return `<tr data-mat="${esc(i.Material)}">${head}
-    <td colspan="3"><input type="number" min="0" step="any" class="ap-qty" value="${esc(i.Qty)}" style="width:90px"> <span style="font-size:11px;color:var(--muted)">approve qty</span></td>
-    <td style="white-space:nowrap">
-      <button class="btn btn-primary btn-sm" onclick="approveIMS(this)">Approve</button>
-      <button class="btn btn-light btn-sm" style="color:var(--red)" onclick="rejectIMS(this)">Reject</button>
-    </td></tr>`;
+  const done = ord>0
+    ? `<span style="color:var(--green);font-weight:600">${esc(ord)} ${u}</span>`
+    : `<span style="color:var(--muted)">—</span>`;
+  const act = ord>0 ? '' :
+    `<button class="btn btn-light btn-sm" style="color:var(--red)" onclick="rejectIMS(this)">Reject</button>`;
+  return `<tr data-mat="${esc(i.Material)}">
+    <td>${esc(i.Material)}${recv}</td>
+    <td>${esc(i.Qty)} ${u}</td>
+    <td>${done}</td>
+    <td style="color:var(--amber);font-weight:600">${esc(i.PendingQty)} ${u}</td>
+    <td>${act}</td></tr>`;
 }
 
 function renderIMSPOs(){
   const list = State.imsPOs || [];
-  const awaiting = list.reduce((a,po)=>a+po.items.filter(i=>i.Approval==='awaiting').length,0);
+  const items = list.reduce((a,po)=>a+po.items.length,0);
   $('#viewRoot').innerHTML = `
     <div class="panel"><div class="panel-head">
       <h3>IMS Requests</h3>
-      <span class="stat-hint">${list.length} PO${list.length===1?'':'s'} · ${awaiting} approval baaki</span>
+      <span class="stat-hint">${list.length} PO${list.length===1?'':'s'} · ${items} item pending</span>
     </div>
     <div class="panel-body flush">${list.length ? list.map(po=>{
-      const canImport = po.items.some(i=>Number(i.PendingQty)>0);
       const smsBadge = po.SMS_POs && po.SMS_POs.length
         ? `<span class="badge b-green" style="margin-left:6px">Orders · ${po.SMS_POs.map(esc).join(', ')}</span>` : '';
-      const btn = canImport
-        ? `<button class="btn btn-primary btn-sm" onclick="openImportIMS('${esc(po.POID)}')">${po.ImportState==='partial'?'Import remaining':'Import to Order'}</button>`
-        : `<button class="btn btn-light btn-sm" disabled>Approval baaki</button>`;
       return `
       <div data-po="${esc(po.POID)}" style="border-bottom:1px solid var(--border);padding:12px 16px">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
@@ -1244,12 +1237,12 @@ function renderIMSPOs(){
           </div>
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <div style="font-size:12px;color:var(--muted)">${esc(po.Date||'')}${po.Supplier?' · '+esc(po.Supplier):''}</div>
-            ${btn}
+            <button class="btn btn-primary btn-sm" onclick="openImportIMS('${esc(po.POID)}')">Approve &amp; Order</button>
           </div>
         </div>
         <table class="mini-table" style="margin-top:8px">
           <thead><tr style="font-size:11px;color:var(--muted);text-align:left">
-            <th>Item</th><th>IMS Qty</th><th>Approved</th><th>Ordered</th><th>Pending</th><th></th>
+            <th>Item</th><th>IMS Qty</th><th>Approved &amp; Ordered</th><th>Pending</th><th></th>
           </tr></thead>
           <tbody>${po.items.map(imsItemRow).join('')}</tbody>
         </table>
@@ -1334,7 +1327,7 @@ function openImportIMS(poid){
   po.items.forEach(i=>{ impPending[i.Material] = Number(i.PendingQty)||0; });
   const pending = po.items.filter(i=>Number(i.PendingQty)>0);
   const done = po.items.filter(i=>Number(i.PendingQty)<=0 && Number(i.OrderedQty)>0);
-  openModal('Import '+poid+' → Order(s)', `
+  openModal('Approve & Order — '+poid, `
     ${done.length?`<div style="font-size:12px;color:var(--muted);margin-bottom:10px">Fully ordered: ${done.map(i=>esc(i.Material)).join(', ')}</div>`:''}
     <h4 class="mini-head">Items — vendor, qty, rate</h4>
     <div class="table-wrap"><table class="mini-table split-table" id="impRows">
@@ -1351,7 +1344,7 @@ function openImportIMS(poid){
     </div>
     <div class="modal-actions">
       <button class="btn btn-light" onclick="closeModal()">Cancel</button>
-      <button class="btn btn-primary" id="impSave" onclick="saveImportIMS()">Create Order(s)</button>
+      <button class="btn btn-primary" id="impSave" onclick="saveImportIMS()">Approve &amp; Place Order</button>
     </div>`);
   impRecalc();
 }
@@ -1399,11 +1392,11 @@ async function saveImportIMS(){
   if(!items.length) return toast('Kam se kam ek item ka vendor + qty daalo','error');
   const btn=$('#impSave'); btn.disabled=true; btn.innerHTML='<span class="spinner"></span>';
   try{
-    const res=await api({action:'importIMSPO', IMS_POID:importPOID, Date:$('#impDate').value,
-      CreatedBy:State.user.Name, items:JSON.stringify(items)});
+    const res=await api({action:'approveAndOrderIMS', IMS_POID:importPOID, Date:$('#impDate').value,
+      items:JSON.stringify(items)});
     toast('Order(s) bane: '+(res.created||[]).map(c=>c.PO_No).join(', '),'success');
     closeModal(); await loadAll(); loadIMSPOsBackground(); switchView('orders');
-  }catch(e){ toast(e.message,'error'); btn.disabled=false; btn.textContent='Create Order(s)'; }
+  }catch(e){ toast(e.message,'error'); btn.disabled=false; btn.textContent='Approve & Place Order'; }
 }
 
 /* =========================================================
