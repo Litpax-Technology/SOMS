@@ -1199,51 +1199,107 @@ async function deleteMaster(list, btn){
 /* =========================================================
  *  FROM IMS  (pending POs raised in IMS — read only)
  * ========================================================= */
+function imsItemRow(i){
+  const u = esc(i.Unit||'');
+  const recv = Number(i.IMSReceived)>0
+    ? `<div style="font-size:10px;color:var(--muted)">IMS received ${esc(i.IMSReceived)}</div>` : '';
+  const head = `<td>${esc(i.Material)}${recv}</td><td>${esc(i.Qty)} ${u}</td>`;
+  if(i.Approval==='approved'){
+    return `<tr data-mat="${esc(i.Material)}" data-appr="${esc(i.ApprovedQty)}">${head}
+      <td style="color:var(--green);font-weight:600">${esc(i.ApprovedQty)} ${u}
+        <button class="btn-ghost" style="padding:0 6px" title="Approved qty badlo" onclick="editApproveIMS(this)">✎</button></td>
+      <td>${esc(i.OrderedQty)}</td>
+      <td style="color:var(--amber);font-weight:600">${esc(i.PendingQty)}</td>
+      <td></td></tr>`;
+  }
+  return `<tr data-mat="${esc(i.Material)}">${head}
+    <td colspan="3"><input type="number" min="0" step="any" class="ap-qty" value="${esc(i.Qty)}" style="width:90px"> <span style="font-size:11px;color:var(--muted)">approve qty</span></td>
+    <td style="white-space:nowrap">
+      <button class="btn btn-primary btn-sm" onclick="approveIMS(this)">Approve</button>
+      <button class="btn btn-light btn-sm" style="color:var(--red)" onclick="rejectIMS(this)">Reject</button>
+    </td></tr>`;
+}
+
 function renderIMSPOs(){
   const list = State.imsPOs || [];
+  const awaiting = list.reduce((a,po)=>a+po.items.filter(i=>i.Approval==='awaiting').length,0);
   $('#viewRoot').innerHTML = `
     <div class="panel"><div class="panel-head">
-      <h3>IMS Pending POs</h3>
-      <span class="stat-hint">${list.length} PO${list.length===1?'':'s'}</span>
+      <h3>IMS Requests</h3>
+      <span class="stat-hint">${list.length} PO${list.length===1?'':'s'} · ${awaiting} approval baaki</span>
     </div>
     <div class="panel-body flush">${list.length ? list.map(po=>{
-      const st = po.ImportState||'none';
-      const stBadge = st==='full'
-        ? `<span class="badge b-green" style="margin-left:6px">Imported ✓${po.SMS_POs&&po.SMS_POs.length?' · '+po.SMS_POs.map(esc).join(', '):''}</span>`
-        : st==='partial'
-          ? `<span class="badge b-amber" style="margin-left:6px">Partial ${po.ImportedCount}/${po.TotalCount}</span>`
-          : '';
-      const btn = st==='full'
-        ? `<button class="btn btn-light btn-sm" disabled>Imported</button>`
-        : `<button class="btn btn-primary btn-sm" onclick="openImportIMS('${esc(po.POID)}')">${st==='partial'?'Import remaining':'Import to Order'}</button>`;
+      const canImport = po.items.some(i=>Number(i.PendingQty)>0);
+      const smsBadge = po.SMS_POs && po.SMS_POs.length
+        ? `<span class="badge b-green" style="margin-left:6px">Orders · ${po.SMS_POs.map(esc).join(', ')}</span>` : '';
+      const btn = canImport
+        ? `<button class="btn btn-primary btn-sm" onclick="openImportIMS('${esc(po.POID)}')">${po.ImportState==='partial'?'Import remaining':'Import to Order'}</button>`
+        : `<button class="btn btn-light btn-sm" disabled>Approval baaki</button>`;
       return `
-      <div style="border-bottom:1px solid var(--border);padding:12px 16px">
+      <div data-po="${esc(po.POID)}" style="border-bottom:1px solid var(--border);padding:12px 16px">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
           <div class="row-strong">${esc(po.POID)}
             <span class="badge ${po.Status==='Partial'?'b-amber':'b-blue'}" style="margin-left:6px">${esc(po.Status)}</span>
-            ${stBadge}
+            ${smsBadge}
           </div>
           <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
             <div style="font-size:12px;color:var(--muted)">${esc(po.Date||'')}${po.Supplier?' · '+esc(po.Supplier):''}</div>
             ${btn}
           </div>
         </div>
-        <table class="mini-table" style="margin-top:8px"><tbody>
-          ${po.items.map(i=>{
-            const s=i.ImportState||'none';
-            const tick=s==='full'?'<span style="color:var(--green)">✓</span> ':'';
-            const info=s==='full'?'fully ordered':s==='partial'?`${i.OrderedQty}/${i.Qty} ordered · ${i.PendingQty} pending`:'pending';
-            const col=s==='full'?'var(--green)':s==='partial'?'var(--amber)':'var(--muted)';
-            return `<tr>
-              <td>${tick}${esc(i.Material)}</td>
-              <td>${esc(i.Qty)} ${esc(i.Unit||'')}</td>
-              <td style="color:${col};font-size:11px">${info}</td>
-            </tr>`;
-          }).join('')}
-        </tbody></table>
+        <table class="mini-table" style="margin-top:8px">
+          <thead><tr style="font-size:11px;color:var(--muted);text-align:left">
+            <th>Item</th><th>IMS Qty</th><th>Approved</th><th>Ordered</th><th>Pending</th><th></th>
+          </tr></thead>
+          <tbody>${po.items.map(imsItemRow).join('')}</tbody>
+        </table>
       </div>`;
-    }).join('') : emptyState('No pending POs from IMS','')}
+    }).join('') : emptyState('Koi pending IMS request nahi','')}
     </div></div>`;
+}
+
+function imsRowInfo(btn){
+  const tr = btn.closest('tr');
+  return { tr, po: btn.closest('[data-po]').dataset.po, mat: tr.dataset.mat };
+}
+async function reloadIMS(){
+  State.imsPOs = await api({action:'getIMSPendingPOs'}) || [];
+  render();
+}
+async function approveIMS(btn){
+  const {tr,po,mat} = imsRowInfo(btn);
+  const qty = Number(tr.querySelector('.ap-qty').value);
+  if(!(qty>0)) return toast('Approved qty 0 se badi daalo (ya Reject karo)','error');
+  btn.disabled = true;
+  try{
+    await api({action:'approveIMSItem', IMS_POID:po, Material:mat, ApprovedQty:qty});
+    toast(mat+' — '+qty+' approved','success');
+    await reloadIMS();
+  }catch(e){ toast(e.message,'error'); btn.disabled=false; }
+}
+async function editApproveIMS(btn){
+  const {tr,po,mat} = imsRowInfo(btn);
+  const v = prompt('Naya approved qty — '+mat, tr.dataset.appr);
+  if(v===null) return;
+  const qty = Number(v);
+  if(!(qty>0)) return toast('Qty 0 se badi honi chahiye','error');
+  try{
+    await api({action:'approveIMSItem', IMS_POID:po, Material:mat, ApprovedQty:qty});
+    toast('Approved qty update ho gayi','success');
+    await reloadIMS();
+  }catch(e){ toast(e.message,'error'); }
+}
+async function rejectIMS(btn){
+  const {po,mat} = imsRowInfo(btn);
+  const reason = prompt('Reject ka reason (IMS me bhi dikhega) — '+mat);
+  if(reason===null) return;
+  if(!reason.trim()) return toast('Reason zaroori hai','error');
+  btn.disabled = true;
+  try{
+    await api({action:'rejectIMSItem', IMS_POID:po, Material:mat, Reason:reason.trim()});
+    toast(mat+' reject hua — IMS me bhi Cancelled','success');
+    await reloadIMS();
+  }catch(e){ toast(e.message,'error'); btn.disabled=false; }
 }
 
 /* ----- Sync items + categories from IMS ----- */
