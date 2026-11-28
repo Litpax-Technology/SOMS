@@ -734,8 +734,7 @@ async function saveReceiving(po){
   const mat=$('#rvMat').value; if(!mat) return toast('Select material','error');
   const recv=Number($('#rvRecv').value);
   if(!(recv>0)) return toast('Received qty must be greater than 0','error');
-  const pend=Number($('#rvMat').selectedOptions[0].dataset.pend);
-  if(recv>pend) return toast('Only '+pend+' pending — cannot over-receive','error');
+
   let acc=$('#rvAcc').value==='' ? recv : Number($('#rvAcc').value);
   let rej=$('#rvRej').value==='' ? 0 : Number($('#rvRej').value);
   if(acc+rej!==recv) return toast('Accepted + Rejected must equal Received','error');
